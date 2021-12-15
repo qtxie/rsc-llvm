@@ -1,0 +1,1 @@
+#define RSC_VERSION "0.0.1"

@@ -24,10 +24,7 @@ const char* Compilation::readFile(std::string &filepath) {
     }
 
     auto id = SrcMgr.AddNewSourceBuffer(std::move(*file_or_err), llvm::SMLoc());
-    File f;
+    File f = {filepath};
     Files.push_back(f);
     return SrcMgr.getMemoryBuffer(id)->getBuffer().begin();
 }
-
-
-Compilation::~Compilation() {}

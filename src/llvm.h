@@ -13,27 +13,29 @@
 #define RED_SYSTEM_LLVM_H
 
 namespace llvm {
-  // ADT's.
-  class StringRef;
-  class Twine;
-  class VersionTuple;
-  template<typename T> class ArrayRef;
-  template<typename T> class MutableArrayRef;
-  template<typename T> class OwningArrayRef;
-  template<unsigned InternalLen> class SmallString;
-  template<typename T> class Optional;
-  template <class T> class Expected;
+    class raw_ostream;
 
-  template<typename T>
-  struct SaveAndRestore;
+    // ADT's.
+    class StringRef;
+    class Twine;
+    class VersionTuple;
+    template<typename T> class ArrayRef;
+    template<typename T> class MutableArrayRef;
+    template<typename T> class OwningArrayRef;
+    template<unsigned InternalLen> class SmallString;
+    template<typename T> class Optional;
+    template <class T> class Expected;
 
-  // Reference counting.
-  template <typename T> class IntrusiveRefCntPtr;
-  template <typename T> struct IntrusiveRefCntPtrInfo;
-  template <class Derived> class RefCountedBase;
+    template<typename T>
+    struct SaveAndRestore;
 
-  class raw_ostream;
-  class raw_pwrite_stream;
+    // Reference counting.
+    template <typename T> class IntrusiveRefCntPtr;
+    template <typename T> struct IntrusiveRefCntPtrInfo;
+    template <class Derived> class RefCountedBase;
+
+    class raw_ostream;
+    class raw_pwrite_stream;
 }
 
 // ADT's.

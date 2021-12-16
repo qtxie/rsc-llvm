@@ -16,7 +16,7 @@
 #include <llvm/Support/SourceMgr.h>
 
 class Compilation {
-private:
+public:
     struct File {
         std::string pathname;
         unsigned int pos;       // position of the first token in `Tokens`
@@ -26,9 +26,7 @@ private:
     std::string MainFile;
     llvm::SourceMgr SrcMgr;
 
-public:
     Compilation(std::string filepath) : MainFile(filepath) {}
-    ~Compilation();
 
     void run();
     const char* readFile(std::string &filepath);

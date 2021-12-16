@@ -27,11 +27,11 @@ enum TokenId {
     TokenIdCmpLessThan,
     TokenIdCmpNotEq,
     TokenIdComma,
-    TokenIdDash,
     TokenIdEq,
     TokenIdFloatLiteral,
     TokenIdGetPath,
     TokenIdGetWord,
+    TokenIdHash,
     TokenIdIntLiteral,
     TokenIdKeywordAlias,
     TokenIdKeywordAll,
@@ -72,6 +72,7 @@ enum TokenId {
     TokenIdLBrace,
     TokenIdLBracket,
     TokenIdLParen,
+    TokenIdMinus,
     TokenIdModulo,
     TokenIdQuestion,
     TokenIdPath,
@@ -93,13 +94,13 @@ enum TokenId {
 };
 
 struct Hideset {
-  Hideset *next;
-  char *name;
+    Hideset *next;
+    char *name;
 };
 
 struct Token {
     TokenId id;         // Token ID
-    char *loc;          // Token location
+    const char *loc;    // Token location
     int len;            // Token length
     Hideset *hideset;   // For macro expansion
 };

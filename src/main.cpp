@@ -11,7 +11,6 @@
 #include <llvm/IR/IRPrintingPasses.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/Support/FileSystem.h>
-#include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/Host.h>
 #include <llvm/Support/InitLLVM.h>
@@ -76,16 +75,16 @@ static cl::opt<std::string> PipelineStartEPPipeline(
     cl::desc("Pipeline start extension point"));
 
 void printVersion(llvm::raw_ostream &OS) {
-  OS << "Red/System compiler v" << RSC_VERSION << "\n";
-  OS << "  Default target: "
-     << llvm::sys::getDefaultTargetTriple() << "\n";
-  std::string CPU(llvm::sys::getHostCPUName());
-  OS << "  Host CPU: " << CPU << "\n";
-  OS << "\n";
-  OS.flush();
-  llvm::TargetRegistry::printRegisteredTargetsForVersion(
-      OS);
-  exit(EXIT_SUCCESS);
+    OS << "Red/System compiler v" << RSC_VERSION << "\n";
+    OS << "  Default target: "
+        << llvm::sys::getDefaultTargetTriple() << "\n";
+    std::string CPU(llvm::sys::getHostCPUName());
+    OS << "  Host CPU: " << CPU << "\n";
+    OS << "\n";
+    OS.flush();
+    llvm::TargetRegistry::printRegisteredTargetsForVersion(
+        OS);
+    exit(EXIT_SUCCESS);
 }
 
 llvm::TargetMachine *
@@ -162,7 +161,7 @@ int main(int Argc, const char **Argv) {
     llvm::cl::ParseCommandLineOptions(Argc, Argv);
 
     if (InputFiles.size() == 0) {
-        llvm::WithColor::error(errs(), Argv[0])
+        llvm::WithColor::error(llvm::errs(), Argv[0])
             << "no input files" << "\n";
         exit(EXIT_FAILURE);
     }
@@ -173,24 +172,24 @@ int main(int Argc, const char **Argv) {
                     [](const std::string &a) {
                     return a == "help";
                     })) {
-    auto Triple =
-        llvm::Triple(LLVM_DEFAULT_TARGET_TRIPLE);
-    std::string ErrMsg;
-    if (auto target =
-            llvm::TargetRegistry::lookupTarget(
-                Triple.getTriple(), ErrMsg)) {
-        llvm::errs() << "Targeting " << target->getName()
-                    << ". ";
-        // this prints the available CPUs and features of
-        // the target to stderr...
-        target->createMCSubtargetInfo(
-            Triple.getTriple(), codegen::getCPUStr(),
-            codegen::getFeaturesStr());
-    } else {
-        llvm::errs() << ErrMsg << "\n";
-        exit(EXIT_FAILURE);
-    }
-    exit(EXIT_SUCCESS);
+        auto Triple =
+            llvm::Triple(LLVM_DEFAULT_TARGET_TRIPLE);
+        std::string ErrMsg;
+        if (auto target =
+                llvm::TargetRegistry::lookupTarget(
+                    Triple.getTriple(), ErrMsg)) {
+            llvm::errs() << "Targeting " << target->getName()
+                        << ". ";
+            // this prints the available CPUs and features of
+            // the target to stderr...
+            target->createMCSubtargetInfo(
+                Triple.getTriple(), codegen::getCPUStr(),
+                codegen::getFeaturesStr());
+        } else {
+            llvm::errs() << ErrMsg << "\n";
+            exit(EXIT_FAILURE);
+        }
+        exit(EXIT_SUCCESS);
     }
 
     llvm::TargetMachine *TM = createTargetMachine(Argv[0]);

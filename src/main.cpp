@@ -160,45 +160,18 @@ int main(int Argc, const char **Argv) {
     llvm::cl::SetVersionPrinter(&printVersion);
     llvm::cl::ParseCommandLineOptions(Argc, Argv);
 
-    if (InputFiles.size() == 0) {
+    if (Argc == 1) {
         llvm::WithColor::error(llvm::errs(), Argv[0])
             << "no input files" << "\n";
         exit(EXIT_FAILURE);
     }
 
-    if (codegen::getMCPU() == "help" ||
-        std::any_of(codegen::getMAttrs().begin(),
-                    codegen::getMAttrs().end(),
-                    [](const std::string &a) {
-                    return a == "help";
-                    })) {
-        auto Triple =
-            llvm::Triple(LLVM_DEFAULT_TARGET_TRIPLE);
-        std::string ErrMsg;
-        if (auto target =
-                llvm::TargetRegistry::lookupTarget(
-                    Triple.getTriple(), ErrMsg)) {
-            llvm::errs() << "Targeting " << target->getName()
-                        << ". ";
-            // this prints the available CPUs and features of
-            // the target to stderr...
-            target->createMCSubtargetInfo(
-                Triple.getTriple(), codegen::getCPUStr(),
-                codegen::getFeaturesStr());
-        } else {
-            llvm::errs() << ErrMsg << "\n";
-            exit(EXIT_FAILURE);
-        }
-        exit(EXIT_SUCCESS);
-    }
-
     llvm::TargetMachine *TM = createTargetMachine(Argv[0]);
-    if (!TM)
-    exit(EXIT_FAILURE);
+    if (!TM) exit(EXIT_FAILURE);
 
     for (const auto &file : InputFiles) {
         Compilation comp{file};
         comp.run();
     }
-    exit(EXIT_SUCCESS);
+    return 0;
 }

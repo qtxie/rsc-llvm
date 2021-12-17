@@ -108,6 +108,6 @@ struct Token {
 typedef uint32_t TokenIndex;
 typedef std::vector<Token> TokenList;
 
-void tokenize(const char *buffer, Compilation& ctx);
+void tokenize(Compilation& ctx, const char *buffer);
 
 #endif /* RED_SYSTEM_TOKENIZER_H */

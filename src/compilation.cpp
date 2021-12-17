@@ -13,14 +13,15 @@
 
 void Compilation::run() {
     const char *buffer = readFile(MainFile);
-    tokenize(buffer, *this);
+    tokenize(*this, buffer);
 }
 
 const char* Compilation::readFile(std::string &filepath) {   
     llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> file_or_err = llvm::MemoryBuffer::getFile(filepath);
 
     if (std::error_code err = file_or_err.getError()) {
-      llvm::WithColor::error(llvm::errs()) << "Error reading " << filepath << ": " << err.message() << "\n";
+        llvm::WithColor::error(llvm::errs()) << "Error reading " << filepath << ": " << err.message() << "\n";
+        exit(EXIT_FAILURE);
     }
 
     auto id = SrcMgr.AddNewSourceBuffer(std::move(*file_or_err), llvm::SMLoc());

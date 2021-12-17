@@ -12,7 +12,9 @@
 
 #include "llvm.h"
 #include "tokenizer.h"
+#include "diagnostic.h"
 #include <string>
+#include <llvm/Support/FormatVariadic.h>
 #include <llvm/Support/SourceMgr.h>
 
 class Compilation {
@@ -29,7 +31,17 @@ public:
     Compilation(std::string filepath) : MainFile(filepath) {}
 
     void run();
+
     const char* readFile(std::string &filepath);
+
+    template <typename... Args>
+    void report(const char *loc, unsigned diag_id, Args &&... args) {
+        std::string msg = llvm::formatv(getDiagnosticText(diag_id), std::forward<Args>(args)...).str();
+        llvm::SourceMgr::DiagKind kind = getDiagnosticKind(diag_id);
+        SrcMgr.PrintMessage(llvm::SMLoc::getFromPointer(loc), kind, msg);
+        if (kind == llvm::SourceMgr::DK_Error)
+            exit(EXIT_FAILURE);
+    }
 };
 
 #endif /* RED_SYSTEM_COMPILATION_H */

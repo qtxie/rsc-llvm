@@ -14,8 +14,7 @@
 void Compilation::run() {
     const char *buffer = readFile(MainFile);
 
-    Tokenizer Tk(*this);
-    Tk.tokenize(buffer);
+    Tokenizer(*this).tokenize(buffer);
 }
 
 const char* Compilation::readFile(std::string &filepath) {   

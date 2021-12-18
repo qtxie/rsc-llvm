@@ -8,6 +8,28 @@
 #include "Tokenizer.h"
 #include "Compilation.h"
 
+static bool in_range(uint32_t *range, uint32_t c) {
+  for (int i = 0; range[i] != -1; i += 2)
+    if (range[i] <= c && c <= range[i + 1])
+      return true;
+  return false;
+}
+
+// This function returns true if a given character is acceptable as
+// the first character of an identifier.
+//
+// The following characters are not allowed:
+//   whitespaces && control-chars && /\,[](){}"#%$@:;'
+//
+// NOTE!!! We accept all the codepoints in range [0x00A8, 0x2FA1F], this is not safe.
+static bool isSymbolChar(uint32_t c) {
+  static uint32_t range[] = {
+    '^', 'z', 'A', 'Z', '0', '9', '=', '?', '*', '.', '!', '!', '|', '|', '~', '~',
+    0x00A8, 0x2FA1F, -1,
+  };
+  return in_range(range, c);
+}
+
 uint32_t Tokenizer::decodeUtf8(const char *p, const char **new_pos) {
     if ((unsigned char)*p < 128) {
         *new_pos = p + 1;
@@ -39,6 +61,17 @@ uint32_t Tokenizer::decodeUtf8(const char *p, const char **new_pos) {
 
     *new_pos = p + len;
     return c;
+}
+
+int Tokenizer::scanSymbol(const char *p) {
+    const char *start = p;
+    for (;;) {
+        const char *q;
+        uint32_t c = decodeUtf8(p, &q);
+        if (!isSymbolChar(c))
+            return p - start;
+        p = q;
+    }
 }
 
 const char * Tokenizer::scanBinary(const char *p) {
@@ -114,7 +147,7 @@ void Tokenizer::tokenize(const char *p) {
             bool has_dot = (id == TokenIdFloatLiteral);
             bool has_exp = false;
             const char *q = p++;
-            while (!isEndChars(*p)) {
+            while (!isDelimiter(*p)) {
                 if (isdigit(*p) || *p == '\'') {
                     p++;
                 } else if (*p == 'e' || *p == 'E') {

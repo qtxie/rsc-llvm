@@ -28,6 +28,8 @@ public:
 private:
     uint32_t decodeUtf8(const char *p, const char **new_pos);
 
+    int scanSymbol(const char *p);
+
     const char * scanBinary(const char *p);
 
     const char * scanByte(const char *p);
@@ -36,8 +38,8 @@ private:
 
     bool isHexChar(int c) {return strchr("ABCDEF", c);}
 
-    bool isEndChars(int c) {
-        return (isspace(c) || strchr("[]();{\"", c) || c == 0);
+    bool isDelimiter(int c) {
+        return (strchr(" \t\n\r[]();{}\"\v\f", c) || c == 0);
     }
 
     void addToken(TokenList tokens, TokenId id, const char *start, int len) {

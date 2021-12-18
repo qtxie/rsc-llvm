@@ -5,18 +5,18 @@
  * https://github.com/red/red/blob/master/BSD-3-License.txt
 */
 
-#include "diagnostic.h"
+#include "Diagnostic.h"
 
 using llvm::SourceMgr;
 
 namespace {
     const char *DiagnosticText[] = {
         #define DIAG(ID, Level, Msg) Msg,
-        #include "diagnostic.def"
+        #include "Diagnostic.def"
     };
     llvm::SourceMgr::DiagKind DiagnosticKind[] = {
         #define DIAG(ID, Level, Msg) SourceMgr::DK_##Level,
-        #include "diagnostic.def"
+        #include "Diagnostic.def"
     };
 }
 

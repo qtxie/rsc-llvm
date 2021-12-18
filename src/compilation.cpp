@@ -7,13 +7,15 @@
  * Summary: The compilation context for each file
 */
 
-#include "compilation.h"
-#include <llvm/Support/SourceMgr.h>
+#include "Compilation.h"
+#include "Tokenizer.h"
 #include <llvm/Support/WithColor.h>
 
 void Compilation::run() {
     const char *buffer = readFile(MainFile);
-    tokenize(*this, buffer);
+
+    Tokenizer Tk(*this);
+    Tk.tokenize(buffer);
 }
 
 const char* Compilation::readFile(std::string &filepath) {   
@@ -25,7 +27,5 @@ const char* Compilation::readFile(std::string &filepath) {
     }
 
     auto id = SrcMgr.AddNewSourceBuffer(std::move(*file_or_err), llvm::SMLoc());
-    File f = {filepath};
-    Files.push_back(f);
     return SrcMgr.getMemoryBuffer(id)->getBuffer().begin();
 }

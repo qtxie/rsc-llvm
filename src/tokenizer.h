@@ -8,106 +8,41 @@
 #ifndef RED_SYSTEM_TOKENIZER_H
 #define RED_SYSTEM_TOKENIZER_H
 
-#include <cstdint>
-#include <vector>
-#include "llvm.h"
+#include <cctype>
+#include "LLVM.h"
+#include "Token.h"
 
 class Compilation;
 
-enum TokenId {
-    TokenIdBitShiftLeft,
-    TokenIdBitShiftRight,           // >>
-    TokenIdBitShiftRightLogical,    // >>>
-    TokenIdBuiltin,
-    TokenIdCharLiteral,
-    TokenIdCmpEq,
-    TokenIdCmpGreaterOrEq,
-    TokenIdCmpGreaterThan,
-    TokenIdCmpLessOrEq,
-    TokenIdCmpLessThan,
-    TokenIdCmpNotEq,
-    TokenIdComma,
-    TokenIdEq,
-    TokenIdFloatLiteral,
-    TokenIdGetPath,
-    TokenIdGetWord,
-    TokenIdHash,
-    TokenIdIntLiteral,
-    TokenIdKeywordAlias,
-    TokenIdKeywordAll,
-    TokenIdKeywordAnd,
-    TokenIdKeywordAny,
-    TokenIdKeywordAs,
-    TokenIdKeywordAssert,
-    TokenIdKeywordBreak,
-    TokenIdKeywordCase,
-    TokenIdKeywordCatch,
-    TokenIdKeywordContext,
-    TokenIdKeywordContinue,
-    TokenIdKeywordDeclare,
-    TokenIdKeywordEither,
-    TokenIdKeywordExit,
-    TokenIdKeywordEnum,
-    TokenIdKeywordFalse,
-    TokenIdKeywordFunc,
-    TokenIdKeywordFunction,
-    TokenIdKeywordIf,
-    TokenIdKeywordLoop,
-    TokenIdKeywordNot,
-    TokenIdKeywordNull,
-    TokenIdKeywordOr,
-    TokenIdKeywordPop,
-    TokenIdKeywordPush,
-    TokenIdKeywordReturn,
-    TokenIdKeywordSize,     // size?
-    TokenIdKeywordStruct,
-    TokenIdKeywordSwitch,
-    TokenIdKeywordThrow,
-    TokenIdKeywordTrue,
-    TokenIdKeywordUntil,
-    TokenIdKeywordUse,
-    TokenIdKeywordWhile,
-    TokenIdKeywordWith,
-    TokenIdKeywordXor,
-    TokenIdLBrace,
-    TokenIdLBracket,
-    TokenIdLParen,
-    TokenIdMinus,
-    TokenIdModulo,
-    TokenIdQuestion,
-    TokenIdPath,
-    TokenIdPercent,
-    TokenIdPlus,
-    TokenIdRBrace,
-    TokenIdRBracket,
-    TokenIdRParen,
-    TokenIdSemicolon,
-    TokenIdSetPath,
-    TokenIdSetWord,
-    TokenIdSlash,
-    TokenIdStar,
-    TokenIdStringLiteral,
-    TokenIdMultilineStringLiteralLine,
-    TokenIdIdentifier,
+class Tokenizer
+{
+private:
+    Compilation &ctx;
 
-    TokenIdCount,
+public:
+    Tokenizer(Compilation &c) : ctx(c) {};
+    Tokenizer(Compilation &&) = delete;  // prevents rvalue binding
+
+    void tokenize(const char *buffer);
+
+private:
+    uint32_t decodeUtf8(const char *p, const char **new_pos);
+
+    const char * scanBinary(const char *p);
+
+    const char * scanByte(const char *p);
+
+    const char * scanDirectives(const char *p);
+
+    bool isHexChar(int c) {return strchr("ABCDEF", c);}
+
+    bool isEndChars(int c) {
+        return (isspace(c) || strchr("[]();{\"", c) || c == 0);
+    }
+
+    void addToken(TokenList tokens, TokenId id, const char *start, int len) {
+        tokens.push_back(Token{id, start, len});
+    }
 };
-
-struct Hideset {
-    Hideset *next;
-    char *name;
-};
-
-struct Token {
-    TokenId id;         // Token ID
-    const char *loc;    // Token location
-    int len;            // Token length
-    Hideset *hideset;   // For macro expansion
-};
-
-typedef uint32_t TokenIndex;
-typedef std::vector<Token> TokenList;
-
-void tokenize(Compilation& ctx, const char *buffer);
 
 #endif /* RED_SYSTEM_TOKENIZER_H */

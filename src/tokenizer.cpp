@@ -5,41 +5,57 @@
  * https://github.com/red/red/blob/master/BSD-3-License.txt
 */
 
-#include "tokenizer.h"
-#include "compilation.h"
-#include <cctype>
-#include <llvm/Support/raw_ostream.h>
+#include "Tokenizer.h"
+#include "Compilation.h"
 
-static bool isHexChar(int c) {
-    return strchr("ABCDEF", c);
+uint32_t Tokenizer::decodeUtf8(const char *p, const char **new_pos) {
+    if ((unsigned char)*p < 128) {
+        *new_pos = p + 1;
+        return *p;
+    }
+
+    const char *start = p;
+    int len;
+    uint32_t c;
+
+    if ((unsigned char)*p >= 0b11110000) {
+        len = 4;
+        c = *p & 0b111;
+    } else if ((unsigned char)*p >= 0b11100000) {
+        len = 3;
+        c = *p & 0b1111;
+    } else if ((unsigned char)*p >= 0b11000000) {
+        len = 2;
+        c = *p & 0b11111;
+    } else {
+        ctx.report(p, err_invalid_utf8);
+    }
+
+    for (int i = 1; i < len; i++) {
+        if ((unsigned char)p[i] >> 6 != 0b10)
+            ctx.report(p, err_invalid_utf8);
+        c = (c << 6) | (p[i] & 0b111111);
+    }
+
+    *new_pos = p + len;
+    return c;
 }
 
-static void addToken(TokenList &tokens, TokenId id, const char *start, int len) {
-    tokens.push_back(Token{id, start, len});
-}
-
-inline static bool isEndChars(int c) {
-    return (isspace(c) || strchr("[]();{\"", c) || c == 0);
-}
-
-const char* scanBinary(Compilation &ctx, const char *p) {
+const char * Tokenizer::scanBinary(const char *p) {
     return p;
 }
 
-const char* scanByte(Compilation &ctx, const char *p) {
+const char * Tokenizer::scanByte(const char *p) {
     return p;
 }
 
-const char* scanDirectives(Compilation &ctx, const char *p) {
+const char * Tokenizer::scanDirectives(const char *p) {
+    const char *q = p;
+    
     return p;
 }
 
-void reportError(Compilation &ctx, char *fmt, ...) {
-    llvm::errs() << "error token: " << "\n";
-    exit(1);
-}
-
-void tokenize(Compilation &ctx, const char *p) {
+void Tokenizer::tokenize(const char *p) {
     // Skip the UTF-8 "BOM" marker
     if (!memcmp(p, "\xef\xbb\xbf", 3)) {
         p += 3;
@@ -64,24 +80,22 @@ void tokenize(Compilation &ctx, const char *p) {
 
         // Directives
         if (*p == '#') {
-            const char *q = p++;
             if (*p == '{')           // Binary arrays
-                p = scanBinary(ctx, p);
+                p = scanBinary(p);
             else if (*p == '"')
-                p = scanByte(ctx, p);
+                p = scanByte(p);
             else
-                p = scanDirectives(ctx, p);
+                p = scanDirectives(p);
             continue;
         }
-
 
         // Delimiters
         switch (*p)
         {
-        #define CASE(ch, tok_id)                           \
-            case ch:                                       \
-                addToken(ctx.Tokens, tok_id, p, 1);        \
-                p++;                                       \
+        #define CASE(ch, tok_id)                     \
+            case ch:                                 \
+                addToken(ctx.Tokens, tok_id, p, 1);  \
+                p++;                                 \
                 break
 
         CASE('[', TokenIdLBracket);

@@ -26,8 +26,8 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Target/TargetMachine.h>
 
-#include "version.h"
-#include "compilation.h"
+#include "Version.h"
+#include "Compilation.h"
 
 using namespace llvm;
 

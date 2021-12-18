@@ -10,20 +10,13 @@
 #ifndef RED_SYSTEM_COMPILATION_H
 #define RED_SYSTEM_COMPILATION_H
 
-#include "llvm.h"
-#include "tokenizer.h"
-#include "diagnostic.h"
-#include <string>
+#include "LLVM.h"
+#include "Diagnostic.h"
+#include "Token.h"
 #include <llvm/Support/FormatVariadic.h>
-#include <llvm/Support/SourceMgr.h>
 
 class Compilation {
 public:
-    struct File {
-        std::string pathname;
-        unsigned int pos;       // position of the first token in `Tokens`
-    };
-    std::vector<File> Files;
     TokenList Tokens;
     std::string MainFile;
     llvm::SourceMgr SrcMgr;

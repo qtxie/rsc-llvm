@@ -12,7 +12,7 @@
 
 enum {
     #define DIAG(ID, Level, Msg) ID,
-    #include "diagnostic.def"
+    #include "Diagnostic.def"
 };
 
 const char * getDiagnosticText(unsigned DiagID);

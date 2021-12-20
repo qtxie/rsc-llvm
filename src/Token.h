@@ -8,7 +8,7 @@
 #ifndef RED_SYSTEM_TOKEN_H
 #define RED_SYSTEM_TOKEN_H
 
-#include <vector>
+#include "Buffer.h"
 
 enum TokenId {
     TokenIdBitShiftLeft,
@@ -96,12 +96,13 @@ struct Hideset {
 
 struct Token {
     TokenId id;         // Token ID
-    const char *loc;    // Token location
     int len;            // Token length
+    const char *loc;    // Token location
+    Token *next;        // Next Token
     Hideset *hideset;   // For macro expansion
 };
 
 typedef uint32_t TokenIndex;
-typedef std::vector<Token> TokenList;
+typedef Buffer<Token> TokenBuffer; 
 
 #endif /* RED_SYSTEM_TOKEN_H */

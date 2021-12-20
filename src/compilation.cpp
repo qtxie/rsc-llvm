@@ -13,7 +13,6 @@
 
 void Compilation::run() {
     const char *buffer = readFile(MainFile);
-
     Tokenizer(*this).tokenize(buffer);
 }
 

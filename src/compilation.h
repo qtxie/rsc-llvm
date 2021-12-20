@@ -17,9 +17,9 @@
 
 class Compilation {
 public:
-    TokenList Tokens;
     std::string MainFile;
     llvm::SourceMgr SrcMgr;
+    TokenBuffer TokBuf;
 
     Compilation(std::string filepath) : MainFile(filepath) {}
 

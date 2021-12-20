@@ -42,8 +42,8 @@ private:
         return (strchr(" \t\n\r[]();{}\"\v\f", c) || c == 0);
     }
 
-    void addToken(TokenList tokens, TokenId id, const char *start, int len) {
-        tokens.push_back(Token{id, start, len});
+    Token * newToken(TokenBuffer &buf, TokenId id, const char *start, int len) {
+        return new (buf.alloc()) Token{id, len, start};
     }
 };
 

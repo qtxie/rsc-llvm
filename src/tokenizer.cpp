@@ -83,12 +83,18 @@ const char * Tokenizer::scanByte(const char *p) {
 }
 
 const char * Tokenizer::scanDirectives(const char *p) {
-    const char *q = p;
-    
+    const char *start = p;
+    int n = scanSymbol(p);
+    if (n == 0) {ctx.report(p, err_invalid_token);}
+
+
     return p;
 }
 
 void Tokenizer::tokenize(const char *p) {
+    Token head = {};
+    Token *cur = &head;
+
     // Skip the UTF-8 "BOM" marker
     if (!memcmp(p, "\xef\xbb\xbf", 3)) {
         p += 3;
@@ -97,7 +103,7 @@ void Tokenizer::tokenize(const char *p) {
     while (*p) {
         // Skip line comments
         if (*p == ';') {
-            // NOTE: we don't bother with \r as the line break as modern OSes don't use it.
+            // NOTE: we don't bother with \r as the line break as it's rarely used now
             // OSX, Linux: \n
             // Windows: \r\n
             while (*p != '\n') p++;
@@ -125,10 +131,10 @@ void Tokenizer::tokenize(const char *p) {
         // Delimiters
         switch (*p)
         {
-        #define CASE(ch, tok_id)                     \
-            case ch:                                 \
-                addToken(ctx.Tokens, tok_id, p, 1);  \
-                p++;                                 \
+        #define CASE(ch, tok_id)                                       \
+            case ch:                                                   \
+                cur = cur->next = newToken(ctx.TokBuf, tok_id, p, 1);  \
+                p++;                                                   \
                 break
 
         CASE('[', TokenIdLBracket);
@@ -164,7 +170,7 @@ void Tokenizer::tokenize(const char *p) {
                     p++;
                 } else ctx.report(p, err_invalid_token);
             }
-            addToken(ctx.Tokens, id, q, p - q);
+            cur = cur->next = newToken(ctx.TokBuf, id, q, p - q);
             continue;
         }
 

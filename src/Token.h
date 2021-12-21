@@ -11,6 +11,7 @@
 #include "Buffer.h"
 
 enum TokenId {
+    TokenIdError,
     TokenIdBitShiftLeft,
     TokenIdBitShiftRight,           // >>
     TokenIdBitShiftRightLogical,    // >>>
@@ -68,6 +69,20 @@ enum TokenId {
     TokenIdLBrace,
     TokenIdLBracket,
     TokenIdLParen,
+    TokenIdMacroCall,
+    TokenIdMacroCase,
+    TokenIdMacroDefine,
+    TokenIdMacroEither,
+    TokenIdMacroEnum,
+    TokenIdMacroExport,
+    TokenIdMacroImport,
+    TokenIdMacroInclude,
+    TokenIdMacroIf,
+    TokenIdMacroInline,
+    TokenIdMacroSwitch,
+    TokenIdMacroSyscall,
+    TokenIdMacroU16,
+    TokenIdMacroVerbose,
     TokenIdMinus,
     TokenIdModulo,
     TokenIdQuestion,
@@ -85,6 +100,7 @@ enum TokenId {
     TokenIdStringLiteral,
     TokenIdMultilineStringLiteralLine,
     TokenIdIdentifier,
+    TokenIdEOF,
 
     TokenIdCount,
 };

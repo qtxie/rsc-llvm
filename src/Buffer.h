@@ -39,10 +39,13 @@ public:
     };
 
     T* alloc() {
-        if (Count < ElementsPerChunk)
+        if (Count < ElementsPerChunk) {
             return &Chunk[Count++];
-        else
+        }
+        else {
             addChunk();
+            return &Chunk[Count++];
+        }
     }
 };
 

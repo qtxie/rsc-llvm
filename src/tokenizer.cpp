@@ -19,13 +19,24 @@ static bool in_range(uint32_t *range, uint32_t c) {
 // the first character of an identifier.
 //
 // The following characters are not allowed:
-//   whitespaces && control-chars && /\,[](){}"#%$@:;'
+//   whitespaces control-chars /\,[](){}"#%$@:;'
 //
 // NOTE!!! We accept all the codepoints in range [0x00A8, 0x2FA1F], this is not safe.
 static bool isSymbolChar(uint32_t c) {
   static uint32_t range[] = {
-    '^', 'z', 'A', 'Z', '0', '9', '=', '?', '*', '.', '!', '!', '|', '|', '~', '~',
-    0x00A8, 0x2FA1F, -1,
+    '^', 'z', 'A', 'Z', '0', '9', '=', '?', '*', '+', '-', '.', 
+    '!', '!', '|', '|', '~', '~', 0x00A8, 0x2FA1F, -1,
+  };
+  return in_range(range, c);
+}
+
+// The following characters are not allowed:
+//   whitespaces control-chars [](){}"@:;
+//
+static bool isFileChar(uint32_t c) {
+  static uint32_t range[] = {
+    '^', 'z', 'A', 'Z', '*', '9', '<', '?', '#', '\'', '|', '|', '~', '~',
+    '!', '!', '\\', '\\', '|', '|', 0x00A8, 0x2FA1F, -1,
   };
   return in_range(range, c);
 }
@@ -50,12 +61,12 @@ uint32_t Tokenizer::decodeUtf8(const char *p, const char **new_pos) {
         len = 2;
         c = *p & 0b11111;
     } else {
-        ctx.report(p, err_invalid_utf8);
+        tokenError(p, err_invalid_utf8);
     }
 
     for (int i = 1; i < len; i++) {
         if ((unsigned char)p[i] >> 6 != 0b10)
-            ctx.report(p, err_invalid_utf8);
+            tokenError(p, err_invalid_utf8);
         c = (c << 6) | (p[i] & 0b111111);
     }
 
@@ -82,16 +93,75 @@ const char * Tokenizer::scanByte(const char *p) {
     return p;
 }
 
-const char * Tokenizer::scanDirectives(const char *p) {
-    const char *start = p;
-    int n = scanSymbol(p);
-    if (n == 0) {ctx.report(p, err_invalid_token);}
-
-
-    return p;
+int Tokenizer::scanString(const char *p) {
+    return 0;
 }
 
-void Tokenizer::tokenize(const char *p) {
+int Tokenizer::scanFile(const char *p) {
+    if (*p == '%') {
+        p++;
+        if (*p == '"') {
+            return scanString(p);
+        } else {
+            const char *start = p;
+            for (;;) {
+                const char *q;
+                uint32_t c = decodeUtf8(p, &q);
+                if (!isFileChar(c))
+                    return p - start;
+                p = q;
+            }
+        }
+    } else {
+        tokenError(p, err_invalid_token);
+        return 0;
+    }
+}
+
+Token * Tokenizer::scanDirectives(const char *p) {
+    const static std::array<std::pair<StringRef, TokenId>, 14> directives = {{
+        {"include", TokenIdMacroInclude}, {"define", TokenIdMacroDefine},
+        {"import", TokenIdMacroImport},   {"syscall", TokenIdMacroSyscall},
+        {"enum", TokenIdMacroEnum},       {"if", TokenIdMacroIf},
+        {"either", TokenIdMacroEither},   {"switch", TokenIdMacroSwitch},
+        {"case", TokenIdMacroCase},       {"verbose", TokenIdMacroVerbose},
+        {"u16", TokenIdMacroU16},         {"call", TokenIdMacroCall},
+        {"export", TokenIdMacroExport},   {"inline", TokenIdMacroInline}
+    }};
+
+    int n = scanSymbol(p);
+    if (n == 0) {tokenError(p, err_invalid_token);}
+
+    StringRef sym(p, n);
+    Token *tok = nullptr;
+    for (auto D : directives) {
+        if (sym.equals(D.first)) {
+            tok = newToken(ctx.TokBuf, D.second, p, n);
+            break;
+        }
+    }
+    
+    // To get better cache performance, we process the include file here
+    // so we can put all the tokens in memory sequentially
+    // For non-trivial cases, e.g include file in macros
+    // We let the preprocessor handle them.
+    if (tok) {
+        if (tok->id == TokenIdMacroInclude) {
+            p += n;
+            while (isspace(*p)) p++;
+            n = scanFile(p);
+            if (n > 0) {
+                const char * buf = ctx.readFile(std::string(p + 1, n));
+                tok = tokenize(buf);
+            }
+        }
+        return tok;
+    } else {
+        return tokenError(p, err_unknown_directive);
+    }
+}
+
+Token * Tokenizer::tokenize(const char *p) {
     Token head = {};
     Token *cur = &head;
 
@@ -119,12 +189,17 @@ void Tokenizer::tokenize(const char *p) {
 
         // Directives
         if (*p == '#') {
-            if (*p == '{')           // Binary arrays
+            p++;
+            if (*p == '{') {           // Binary arrays
                 p = scanBinary(p);
-            else if (*p == '"')
+            }
+            else if (*p == '"') {
                 p = scanByte(p);
-            else
-                p = scanDirectives(p);
+            }
+            else {
+                cur = cur->next = scanDirectives(p); 
+                p += cur->len;
+            }
             continue;
         }
 
@@ -157,24 +232,27 @@ void Tokenizer::tokenize(const char *p) {
                 if (isdigit(*p) || *p == '\'') {
                     p++;
                 } else if (*p == 'e' || *p == 'E') {
-                    if (has_exp) ctx.report(p, err_invalid_token);
+                    if (has_exp) tokenError(p, err_invalid_token);
                     has_exp = true;
                     id = TokenIdFloatLiteral;
                     p++;
                     if (*p == '-' || *p == '+') p++;
                 } else if (*p == '.' || *p == ',') {
                     if (has_exp || has_dot)
-                        ctx.report(p, err_invalid_token);
+                        tokenError(p, err_invalid_token);
                     has_dot = true;
                     id = TokenIdFloatLiteral;
                     p++;
-                } else ctx.report(p, err_invalid_token);
+                } else tokenError(p, err_invalid_token);
             }
             cur = cur->next = newToken(ctx.TokBuf, id, q, p - q);
             continue;
         }
 
         // Any words
-        ctx.report(p, err_invalid_token);
+        tokenError(p, err_invalid_token);
     }
+
+    cur = cur->next = newToken(ctx.TokBuf, TokenIdEOF, p, 0);
+    return head.next;
 }

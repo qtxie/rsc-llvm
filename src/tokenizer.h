@@ -23,18 +23,19 @@ public:
     Tokenizer(Compilation &c) : ctx(c) {};
     Tokenizer(Compilation &&) = delete;  // prevents rvalue binding
 
-    void tokenize(const char *buffer);
+    Token * tokenize(const char *buffer);
 
 private:
     uint32_t decodeUtf8(const char *p, const char **new_pos);
 
     int scanSymbol(const char *p);
+    int scanFile(const char *p);
+    int scanString(const char *p);
 
     const char * scanBinary(const char *p);
-
     const char * scanByte(const char *p);
 
-    const char * scanDirectives(const char *p);
+    Token * scanDirectives(const char *p);
 
     bool isHexChar(int c) {return strchr("ABCDEF", c);}
 
@@ -44,6 +45,12 @@ private:
 
     Token * newToken(TokenBuffer &buf, TokenId id, const char *start, int len) {
         return new (buf.alloc()) Token{id, len, start};
+    }
+
+    template <typename... Args>
+    Token * tokenError(const char *loc, unsigned diag_id, Args &&... args) {
+        ctx.report(loc, diag_id, std::forward<Args>(args)...);
+        return newToken(ctx.TokBuf, TokenIdError, loc, 0);
     }
 };
 

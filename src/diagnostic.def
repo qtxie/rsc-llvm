@@ -3,6 +3,7 @@
 #endif
 
 DIAG(err_invalid_token, Error, "invalid token")
+DIAG(err_unknown_directive, Error, "unknown directive")
 DIAG(err_invalid_utf8, Error, "invalid UTF-8 sequence")
 DIAG(err_unterminated_block_comment, Error, "unterminated (* comment")
 DIAG(err_unterminated_char_or_string, Error, "missing terminating character")

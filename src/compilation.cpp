@@ -13,7 +13,7 @@
 
 void Compilation::run() {
     const char *buffer = readFile(MainFile);
-    Tokenizer(*this).tokenize(buffer);
+    Token *tok = Tokenizer(*this).tokenize(buffer);
 }
 
 const char* Compilation::readFile(std::string &filepath) {   

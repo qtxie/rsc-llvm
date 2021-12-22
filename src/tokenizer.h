@@ -23,7 +23,7 @@ public:
     Tokenizer(Compilation &c) : ctx(c) {};
     Tokenizer(Compilation &&) = delete;  // prevents rvalue binding
 
-    Token * tokenize(const char *buffer);
+    Token * tokenize(const char *buffer, Token **end_token);
 
 private:
     uint32_t decodeUtf8(const char *p, const char **new_pos);
@@ -44,13 +44,13 @@ private:
     }
 
     Token * newToken(TokenBuffer &buf, TokenId id, const char *start, int len) {
-        return new (buf.alloc()) Token{id, len, start};
+        return new (buf.alloc()) Token{id, TokenKindAny, len, start};
     }
 
     template <typename... Args>
     Token * tokenError(const char *loc, unsigned diag_id, Args &&... args) {
         ctx.report(loc, diag_id, std::forward<Args>(args)...);
-        return newToken(ctx.TokBuf, TokenIdError, loc, 0);
+        return newToken(ctx.TokBuf, TokenIdUnknown, loc, 0);
     }
 };
 

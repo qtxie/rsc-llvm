@@ -1,0 +1,110 @@
+#ifndef TOK
+#define TOK(ID)
+#endif
+#ifndef OPERATOR
+#define OPERATOR(ID, STR) TOK(ID)
+#endif
+#ifndef DELIMITER
+#define DELIMITER(ID, STR) TOK(ID)
+#endif
+#ifndef KEYWORD
+#define KEYWORD(ID, ID_LOWER) TOK(Keyword ## ID)
+#endif
+#ifndef MACRO
+#define MACRO(ID) TOK(Macro ## ID)
+#endif
+
+TOK(Unknown)             // Not a token.
+TOK(Eof)                 // End of file.
+
+TOK(Identifier)          // abcde123
+
+TOK(Integer)
+TOK(Float)
+TOK(String)
+TOK(MultilineString)
+
+OPERATOR(Plus,                "+")
+OPERATOR(Minus,               "-")
+OPERATOR(Star,                "*")
+OPERATOR(Slash,               "/")
+OPERATOR(Div,                 "/")
+OPERATOR(Modulo,              "//")
+OPERATOR(Remainder,           "%")
+OPERATOR(Comma,               ",")
+OPERATOR(Colon,               ":")
+OPERATOR(Equal,               "=")
+OPERATOR(NotEqual,            "<>")
+OPERATOR(Hash,                "#")
+OPERATOR(Less,                "<")
+OPERATOR(Greater,             ">")
+OPERATOR(LessEqual,           "<=")
+OPERATOR(GreaterEqual,        ">=")
+OPERATOR(ShiftLeft,           "<<")
+OPERATOR(ShiftRight,          ">>")
+OPERATOR(ShiftRightLogical,   ">>>")
+
+DELIMITER(LParen,              "(")
+DELIMITER(RParen,              ")")
+DELIMITER(LBracket,            "[")
+DELIMITER(RBracket,            "]")
+DELIMITER(LBrace,              "{")
+DELIMITER(RBrace,              "}")
+
+KEYWORD(Alias,         "alias") 
+KEYWORD(All,           "all") 
+KEYWORD(And,           "and")
+KEYWORD(Any,           "any")
+KEYWORD(As,            "as")
+KEYWORD(Assert,        "assert")
+KEYWORD(Break,         "break")
+KEYWORD(Case,          "case")
+KEYWORD(Catch,         "catch")
+KEYWORD(Context,       "context")
+KEYWORD(Continue,      "continue")
+KEYWORD(Declare,       "declare")     
+KEYWORD(Either,        "either") 
+KEYWORD(Exit,          "exit"  ) 
+KEYWORD(Enum,          "enum"  ) 
+KEYWORD(False,         "false" ) 
+KEYWORD(Func,          "func"  ) 
+KEYWORD(Function,      "function")    
+KEYWORD(If,            "if"    )
+KEYWORD(Loop,          "loop"  ) 
+KEYWORD(Not,           "not"   ) 
+KEYWORD(Null,          "null"  ) 
+KEYWORD(Or,            "or"    )
+KEYWORD(Pop,           "pop"   ) 
+KEYWORD(Push,          "push"  ) 
+KEYWORD(Return,        "return") 
+KEYWORD(Size,          "size"  ) 
+KEYWORD(Struct,        "struct") 
+KEYWORD(Switch,        "switch") 
+KEYWORD(Throw,         "throw" ) 
+KEYWORD(True,          "true"  ) 
+KEYWORD(Until,         "until" ) 
+KEYWORD(Use,           "use"   ) 
+KEYWORD(While,         "while" ) 
+KEYWORD(With,          "with"  ) 
+KEYWORD(Xor,           "xor"   ) 
+
+MACRO(Call)
+MACRO(Case)
+MACRO(Define)
+MACRO(Either)
+MACRO(Enum)
+MACRO(Export)
+MACRO(Import)
+MACRO(Include)
+MACRO(If)
+MACRO(Inline)
+MACRO(Switch)
+MACRO(Syscall)
+MACRO(U16)
+MACRO(Verbose)
+
+#undef MACRO
+#undef KEYWORD
+#undef DELIMITER
+#undef OPERATOR
+#undef TOK

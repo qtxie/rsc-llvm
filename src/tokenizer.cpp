@@ -9,10 +9,10 @@
 #include "Compilation.h"
 
 static bool in_range(uint32_t *range, uint32_t c) {
-  for (int i = 0; range[i] != -1; i += 2)
-    if (range[i] <= c && c <= range[i + 1])
-      return true;
-  return false;
+    for (int i = 0; range[i] != -1; i += 2)
+        if (range[i] <= c && c <= range[i + 1])
+        return true;
+    return false;
 }
 
 // This function returns true if a given character is acceptable as
@@ -23,22 +23,46 @@ static bool in_range(uint32_t *range, uint32_t c) {
 //
 // NOTE!!! We accept all the codepoints in range [0x00A8, 0x2FA1F], this is not safe.
 static bool isSymbolChar(uint32_t c) {
-  static uint32_t range[] = {
-    '^', 'z', 'A', 'Z', '0', '9', '=', '?', '*', '+', '-', '.', 
-    '!', '!', '|', '|', '~', '~', 0x00A8, 0x2FA1F, -1,
-  };
-  return in_range(range, c);
+    static uint32_t range[] = {
+        '^', 'z', 'A', 'Z', '0', '9', '=', '?', '*', '+', '-', '.', 
+        '!', '!', '|', '|', '~', '~', 0x00A8, 0x2FA1F, -1
+    };
+    return in_range(range, c);
 }
 
 // The following characters are not allowed:
 //   whitespaces control-chars [](){}"@:;
 //
 static bool isFileChar(uint32_t c) {
-  static uint32_t range[] = {
-    '^', 'z', 'A', 'Z', '*', '9', '<', '?', '#', '\'', '|', '|', '~', '~',
-    '!', '!', '\\', '\\', '|', '|', 0x00A8, 0x2FA1F, -1,
-  };
-  return in_range(range, c);
+    static uint32_t range[] = {
+        '^', 'z', 'A', 'Z', '*', '9', '<', '?', '#', '\'', '|', '|', '~', '~',
+        '!', '!', '\\', '\\', '|', '|', 0x00A8, 0x2FA1F, -1
+    };
+    return in_range(range, c);
+}
+
+static auto genKeywordsTable()
+{
+    enum _KEYWORD_ {
+        #define KEYWORD(ID, STR_LOWER) _Keyword ## ID,
+        #include "TokenId.def"
+        KeywordCount
+    };
+    static std::array<std::pair<StringRef, TokenId>, KeywordCount> keywords = {{
+        #define KEYWORD(ID, STR_LOWER) {STR_LOWER, TokenIdKeyword ## ID},
+        #include "TokenId.def"
+    }};
+    std::sort(keywords.begin(), keywords.end());
+    return keywords;
+}
+
+static TokenId getSymbolId(const char *p, int len) {
+    static auto kw_table = genKeywordsTable();
+
+    //std::string sym = (p, len);
+    int i = 0;
+
+    return TokenIdIdentifier;
 }
 
 uint32_t Tokenizer::decodeUtf8(const char *p, const char **new_pos) {
@@ -113,7 +137,6 @@ int Tokenizer::scanFile(const char *p) {
             }
         }
     } else {
-        tokenError(p, err_invalid_token);
         return 0;
     }
 }
@@ -130,38 +153,18 @@ Token * Tokenizer::scanDirectives(const char *p) {
     }};
 
     int n = scanSymbol(p);
-    if (n == 0) {tokenError(p, err_invalid_token);}
+    if (n == 0) return tokenError(p, err_invalid_token);
 
     StringRef sym(p, n);
-    Token *tok = nullptr;
-    for (auto D : directives) {
+    for (auto& D : directives) {
         if (sym.equals(D.first)) {
-            tok = newToken(ctx.TokBuf, D.second, p, n);
-            break;
+            return newToken(ctx.TokBuf, D.second, p, n);
         }
     }
-    
-    // To get better cache performance, we process the include file here
-    // so we can put all the tokens in memory sequentially
-    // For non-trivial cases, e.g include file in macros
-    // We let the preprocessor handle them.
-    if (tok) {
-        if (tok->id == TokenIdMacroInclude) {
-            p += n;
-            while (isspace(*p)) p++;
-            n = scanFile(p);
-            if (n > 0) {
-                const char * buf = ctx.readFile(std::string(p + 1, n));
-                tok = tokenize(buf);
-            }
-        }
-        return tok;
-    } else {
-        return tokenError(p, err_unknown_directive);
-    }
+    return tokenError(p, err_unknown_directive);
 }
 
-Token * Tokenizer::tokenize(const char *p) {
+Token * Tokenizer::tokenize(const char *p, Token **end_token) {
     Token head = {};
     Token *cur = &head;
 
@@ -197,8 +200,28 @@ Token * Tokenizer::tokenize(const char *p) {
                 p = scanByte(p);
             }
             else {
-                cur = cur->next = scanDirectives(p); 
-                p += cur->len;
+                Token *tok = scanDirectives(p);
+                p += tok->len;
+
+                // We process the include file here to get better cache performance
+                // so that we can put all the tokens in memory sequentially
+                // For non-trivial cases, e.g include file in macros
+                // We let the preprocessor handle them.
+                if (tok->id == TokenIdMacroInclude) {
+                    while (isspace(*p)) p++;
+                    int n = scanFile(p);
+                    if (n > 0) {
+                        const char * buf = ctx.readFile(std::string(p + 1, n));
+                        Token *tk_end = nullptr;
+                        tok = tokenize(buf, &tk_end);
+                        cur->next = tok;
+                        cur = tk_end;
+                    } else {
+                        return tokenError(p, err_expected, "file");
+                    }
+                } else {
+                    cur = cur->next = tok;
+                }
             }
             continue;
         }
@@ -224,8 +247,8 @@ Token * Tokenizer::tokenize(const char *p) {
         // Numeric literals
         // E.g. 123  1e3  1.2  .12  ,12  123'45  123'45E+2  1,23e-2
         if (isdigit(*p) || ((*p == '.' || *p == ',') && isdigit(p[1]))) {
-            TokenId id = isdigit(*p) ? TokenIdIntLiteral : TokenIdFloatLiteral;
-            bool has_dot = (id == TokenIdFloatLiteral);
+            TokenId id = isdigit(*p) ? TokenIdInteger : TokenIdFloat;
+            bool has_dot = (id == TokenIdFloat);
             bool has_exp = false;
             const char *q = p++;
             while (!isDelimiter(*p)) {
@@ -234,14 +257,14 @@ Token * Tokenizer::tokenize(const char *p) {
                 } else if (*p == 'e' || *p == 'E') {
                     if (has_exp) tokenError(p, err_invalid_token);
                     has_exp = true;
-                    id = TokenIdFloatLiteral;
+                    id = TokenIdFloat;
                     p++;
                     if (*p == '-' || *p == '+') p++;
                 } else if (*p == '.' || *p == ',') {
                     if (has_exp || has_dot)
                         tokenError(p, err_invalid_token);
                     has_dot = true;
-                    id = TokenIdFloatLiteral;
+                    id = TokenIdFloat;
                     p++;
                 } else tokenError(p, err_invalid_token);
             }
@@ -249,10 +272,16 @@ Token * Tokenizer::tokenize(const char *p) {
             continue;
         }
 
-        // Any words
+        // Symbol, i.e identifier
+        int len = scanSymbol(p);
+        if (len) {
+            cur = cur->next = newToken(ctx.TokBuf, getSymbolId(p, len), p, len);
+        }
+
         tokenError(p, err_invalid_token);
     }
 
-    cur = cur->next = newToken(ctx.TokBuf, TokenIdEOF, p, 0);
+    *end_token = cur;
+    cur = cur->next = newToken(ctx.TokBuf, TokenIdEof, p, 0);
     return head.next;
 }

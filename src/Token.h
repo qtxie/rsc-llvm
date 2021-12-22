@@ -9,100 +9,18 @@
 #define RED_SYSTEM_TOKEN_H
 
 #include "Buffer.h"
+#include <llvm/ADT/StringRef.h>
 
-enum TokenId {
-    TokenIdError,
-    TokenIdBitShiftLeft,
-    TokenIdBitShiftRight,           // >>
-    TokenIdBitShiftRightLogical,    // >>>
-    TokenIdBuiltin,
-    TokenIdCharLiteral,
-    TokenIdCmpEq,
-    TokenIdCmpGreaterOrEq,
-    TokenIdCmpGreaterThan,
-    TokenIdCmpLessOrEq,
-    TokenIdCmpLessThan,
-    TokenIdCmpNotEq,
-    TokenIdComma,
-    TokenIdEq,
-    TokenIdFloatLiteral,
-    TokenIdGetPath,
-    TokenIdGetWord,
-    TokenIdHash,
-    TokenIdIntLiteral,
-    TokenIdKeywordAlias,
-    TokenIdKeywordAll,
-    TokenIdKeywordAnd,
-    TokenIdKeywordAny,
-    TokenIdKeywordAs,
-    TokenIdKeywordAssert,
-    TokenIdKeywordBreak,
-    TokenIdKeywordCase,
-    TokenIdKeywordCatch,
-    TokenIdKeywordContext,
-    TokenIdKeywordContinue,
-    TokenIdKeywordDeclare,
-    TokenIdKeywordEither,
-    TokenIdKeywordExit,
-    TokenIdKeywordEnum,
-    TokenIdKeywordFalse,
-    TokenIdKeywordFunc,
-    TokenIdKeywordFunction,
-    TokenIdKeywordIf,
-    TokenIdKeywordLoop,
-    TokenIdKeywordNot,
-    TokenIdKeywordNull,
-    TokenIdKeywordOr,
-    TokenIdKeywordPop,
-    TokenIdKeywordPush,
-    TokenIdKeywordReturn,
-    TokenIdKeywordSize,     // size?
-    TokenIdKeywordStruct,
-    TokenIdKeywordSwitch,
-    TokenIdKeywordThrow,
-    TokenIdKeywordTrue,
-    TokenIdKeywordUntil,
-    TokenIdKeywordUse,
-    TokenIdKeywordWhile,
-    TokenIdKeywordWith,
-    TokenIdKeywordXor,
-    TokenIdLBrace,
-    TokenIdLBracket,
-    TokenIdLParen,
-    TokenIdMacroCall,
-    TokenIdMacroCase,
-    TokenIdMacroDefine,
-    TokenIdMacroEither,
-    TokenIdMacroEnum,
-    TokenIdMacroExport,
-    TokenIdMacroImport,
-    TokenIdMacroInclude,
-    TokenIdMacroIf,
-    TokenIdMacroInline,
-    TokenIdMacroSwitch,
-    TokenIdMacroSyscall,
-    TokenIdMacroU16,
-    TokenIdMacroVerbose,
-    TokenIdMinus,
-    TokenIdModulo,
-    TokenIdQuestion,
-    TokenIdPath,
-    TokenIdPercent,
-    TokenIdPlus,
-    TokenIdRBrace,
-    TokenIdRBracket,
-    TokenIdRParen,
-    TokenIdSemicolon,
-    TokenIdSetPath,
-    TokenIdSetWord,
-    TokenIdSlash,
-    TokenIdStar,
-    TokenIdStringLiteral,
-    TokenIdMultilineStringLiteralLine,
-    TokenIdIdentifier,
-    TokenIdEOF,
 
-    TokenIdCount,
+enum TokenKind : uint8_t {
+    TokenKindAny,
+    TokenKindWord
+};
+
+enum TokenId : uint8_t {
+    #define TOK(ID) TokenId ## ID,
+    #include "TokenId.def"
+    TokenIdCount
 };
 
 struct Hideset {
@@ -112,10 +30,14 @@ struct Hideset {
 
 struct Token {
     TokenId id;         // Token ID
+    TokenKind kind;     // Token Kind
     int len;            // Token length
     const char *loc;    // Token location
     Token *next;        // Next Token
     Hideset *hideset;   // For macro expansion
+
+    // Helper functions
+    StringRef name() {return StringRef(loc, len);}
 };
 
 typedef uint32_t TokenIndex;

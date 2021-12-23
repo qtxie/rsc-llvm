@@ -48,10 +48,7 @@ private:
     }
 
     template <typename... Args>
-    Token * tokenError(const char *loc, unsigned diag_id, Args &&... args) {
-        ctx.report(loc, diag_id, std::forward<Args>(args)...);
-        return newToken(ctx.TokBuf, TokenIdUnknown, loc, 0);
-    }
+    Token * tokenError(const char *loc, unsigned diag_id, Args &&... args);
 };
 
 #endif /* RED_SYSTEM_TOKENIZER_H */

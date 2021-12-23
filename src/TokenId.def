@@ -18,6 +18,7 @@ TOK(Unknown)             // Not a token.
 TOK(Eof)                 // End of file.
 
 TOK(Identifier)          // abcde123
+TOK(Refinement)          // /local
 
 TOK(Integer)
 TOK(Float)
@@ -27,7 +28,7 @@ TOK(MultilineString)
 OPERATOR(Plus,                "+")
 OPERATOR(Minus,               "-")
 OPERATOR(Star,                "*")
-OPERATOR(Slash,               "/")
+OPERATOR(Slash,               "/")     // when attach to previous symbol
 OPERATOR(Div,                 "/")
 OPERATOR(Modulo,              "//")
 OPERATOR(Remainder,           "%")
@@ -51,6 +52,7 @@ DELIMITER(RBracket,            "]")
 DELIMITER(LBrace,              "{")
 DELIMITER(RBrace,              "}")
 
+// @@ Note: Keep in ascend order
 KEYWORD(Alias,         "alias") 
 KEYWORD(All,           "all") 
 KEYWORD(And,           "and")
@@ -64,8 +66,8 @@ KEYWORD(Context,       "context")
 KEYWORD(Continue,      "continue")
 KEYWORD(Declare,       "declare")     
 KEYWORD(Either,        "either") 
-KEYWORD(Exit,          "exit"  ) 
 KEYWORD(Enum,          "enum"  ) 
+KEYWORD(Exit,          "exit"  ) 
 KEYWORD(False,         "false" ) 
 KEYWORD(Func,          "func"  ) 
 KEYWORD(Function,      "function")    

@@ -43,4 +43,11 @@ struct Token {
 typedef uint32_t TokenIndex;
 typedef Buffer<Token> TokenBuffer; 
 
+const char * const TokenNames[] = {
+    #define TOK(ID) #ID,
+    #define KEYWORD(ID, ID_LOWER) #ID,
+    #include "TokenId.def"
+    nullptr
+};
+
 #endif /* RED_SYSTEM_TOKEN_H */

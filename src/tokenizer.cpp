@@ -41,28 +41,33 @@ static bool isFileChar(uint32_t c) {
     return in_range(range, c);
 }
 
-static auto genKeywordsTable()
+constexpr auto genKeywordsTable()
 {
     enum _KEYWORD_ {
         #define KEYWORD(ID, STR_LOWER) _Keyword ## ID,
         #include "TokenId.def"
         KeywordCount
     };
-    static std::array<std::pair<StringRef, TokenId>, KeywordCount> keywords = {{
+    std::array<std::pair<StringRef, TokenId>, KeywordCount> keywords = {{
         #define KEYWORD(ID, STR_LOWER) {STR_LOWER, TokenIdKeyword ## ID},
         #include "TokenId.def"
     }};
-    std::sort(keywords.begin(), keywords.end());
     return keywords;
 }
 
 static TokenId getSymbolId(const char *p, int len) {
     static auto kw_table = genKeywordsTable();
 
-    //std::string sym = (p, len);
-    int i = 0;
+    StringRef sym(p, len);
 
-    return TokenIdIdentifier;
+    auto it = std::lower_bound(kw_table.begin(), kw_table.end(), sym, 
+        [](const auto &a, const auto &b) {return -1 == a.first.compare_insensitive(b);});
+
+    if (it == kw_table.end() || it->first != sym) {
+        return TokenIdIdentifier;
+    } else {
+        return it->second;
+    }
 }
 
 uint32_t Tokenizer::decodeUtf8(const char *p, const char **new_pos) {
@@ -118,7 +123,11 @@ const char * Tokenizer::scanByte(const char *p) {
 }
 
 int Tokenizer::scanString(const char *p) {
-    return 0;
+    const char * start = p;
+    while (*p != '"') {
+        p++;
+    }
+    return p - start;
 }
 
 int Tokenizer::scanFile(const char *p) {
@@ -164,6 +173,10 @@ Token * Tokenizer::scanDirectives(const char *p) {
     return tokenError(p, err_unknown_directive);
 }
 
+#define ADD_TOK(ID, LOC, LEN) \
+    cur = cur->next = newToken(ctx.TokBuf, ID, LOC, LEN); \
+    p += LEN;
+
 Token * Tokenizer::tokenize(const char *p, Token **end_token) {
     Token head = {};
     Token *cur = &head;
@@ -174,24 +187,70 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
     }
 
     while (*p) {
-        // Skip line comments
-        if (*p == ';') {
+        bool has_space = false;
+
+        // Skip whitespace characters
+        // ' ','\t','\n','\r','\v','\f'
+        while (isspace(*p)) {
+            p++;
+            has_space = true;
+        }
+
+        switch (*p)
+        {
+        #define CASE(ch, tok_id)                                       \
+            case ch:                                                   \
+                cur = cur->next = newToken(ctx.TokBuf, tok_id, p, 1);  \
+                p++;                                                   \
+                continue;
+
+        CASE('[', TokenIdLBracket);
+        CASE(']', TokenIdRBracket);
+        CASE('(', TokenIdLParen);
+        CASE(')', TokenIdRParen);
+
+        case '/':
+            if (has_space) {
+                if (isDelimiter(p[1])) {
+                    ADD_TOK(TokenIdDiv, p, 1);
+                }
+                else if (p[1] == '/' && isDelimiter(p[2])) {
+                    ADD_TOK(TokenIdModulo, p, 2);
+                } else {   // Refinement
+                    p++;
+                    int len = scanSymbol(p);
+                    if (len) {
+                        ADD_TOK(TokenIdRefinement, p, len);
+                    } else {
+                        tokenError(p, err_invalid_token);
+                    }
+                }
+            } else {
+                if (isspace(p[1])) {    // e.g abc/ ef
+                    tokenError(p, err_invalid_token);
+                } else {
+                    ADD_TOK(TokenIdSlash, p, 1);
+                }
+            }
+            continue;
+
+        case ';':
+            // Skip line comments
             // NOTE: we don't bother with \r as the line break as it's rarely used now
             // OSX, Linux: \n
             // Windows: \r\n
             while (*p != '\n') p++;
             continue;
-        }
 
-        // Skip whitespace characters
-        // ' ','\t','\n','\r','\v','\f'
-        if (isspace(*p)) {
-            p++;
+        case '"': {
+            p++;    // Skip beginning "
+            int len = scanString(p);
+            ADD_TOK(TokenIdString, p, len);
+            p++;    // Skip ending "
+            }
             continue;
-        }
 
-        // Directives
-        if (*p == '#') {
+        case '#':
             p++;
             if (*p == '{') {           // Binary arrays
                 p = scanBinary(p);
@@ -211,11 +270,13 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                     while (isspace(*p)) p++;
                     int n = scanFile(p);
                     if (n > 0) {
-                        const char * buf = ctx.readFile(std::string(p + 1, n));
+                        p++;    // skip %
+                        const char * buf = ctx.readFile(std::string(p, n));
                         Token *tk_end = nullptr;
                         tok = tokenize(buf, &tk_end);
                         cur->next = tok;
                         cur = tk_end;
+                        p += n;
                     } else {
                         return tokenError(p, err_expected, "file");
                     }
@@ -224,22 +285,6 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                 }
             }
             continue;
-        }
-
-        // Delimiters
-        switch (*p)
-        {
-        #define CASE(ch, tok_id)                                       \
-            case ch:                                                   \
-                cur = cur->next = newToken(ctx.TokBuf, tok_id, p, 1);  \
-                p++;                                                   \
-                break
-
-        CASE('[', TokenIdLBracket);
-        CASE(']', TokenIdRBracket);
-        CASE('(', TokenIdLBrace);
-        CASE(')', TokenIdRBrace);
-        
         default:
             break;
         }
@@ -250,7 +295,7 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
             TokenId id = isdigit(*p) ? TokenIdInteger : TokenIdFloat;
             bool has_dot = (id == TokenIdFloat);
             bool has_exp = false;
-            const char *q = p++;
+            const char *start = p++;
             while (!isDelimiter(*p)) {
                 if (isdigit(*p) || *p == '\'') {
                     p++;
@@ -268,14 +313,15 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                     p++;
                 } else tokenError(p, err_invalid_token);
             }
-            cur = cur->next = newToken(ctx.TokBuf, id, q, p - q);
+            cur = cur->next = newToken(ctx.TokBuf, id, start, p - start);
             continue;
         }
 
         // Symbol, i.e identifier
         int len = scanSymbol(p);
         if (len) {
-            cur = cur->next = newToken(ctx.TokBuf, getSymbolId(p, len), p, len);
+            ADD_TOK(getSymbolId(p, len), p, len);
+            continue;
         }
 
         tokenError(p, err_invalid_token);
@@ -284,4 +330,10 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
     *end_token = cur;
     cur = cur->next = newToken(ctx.TokBuf, TokenIdEof, p, 0);
     return head.next;
+}
+
+template <typename... Args>
+Token * Tokenizer::tokenError(const char *loc, unsigned diag_id, Args &&... args) {
+    ctx.report(loc, diag_id, std::forward<Args>(args)...);
+    return newToken(ctx.TokBuf, TokenIdUnknown, loc, 0);
 }

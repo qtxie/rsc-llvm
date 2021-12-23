@@ -15,9 +15,13 @@ void Compilation::run() {
     const char *buffer = readFile(MainFile);
     Token *end_tok = nullptr;
     Token *tok = Tokenizer(*this).tokenize(buffer, &end_tok);
+    while (tok) {
+        llvm::errs() << TokenNames[tok->id] << ":" << tok->name() << " ";
+        tok = tok->next;
+    }
 }
 
-const char* Compilation::readFile(std::string &filepath) {   
+const char* Compilation::readFile(const std::string &filepath) {   
     llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> file_or_err = llvm::MemoryBuffer::getFile(filepath);
 
     if (std::error_code err = file_or_err.getError()) {

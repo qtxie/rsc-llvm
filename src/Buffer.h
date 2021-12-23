@@ -8,6 +8,7 @@
 #ifndef RED_SYSTEM_BUFFER_H
 #define RED_SYSTEM_BUFFER_H
 
+#include <llvm/Support/raw_ostream.h>
 #include <vector>
 
 template <typename T>

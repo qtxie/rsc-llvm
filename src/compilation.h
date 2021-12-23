@@ -25,7 +25,7 @@ public:
 
     void run();
 
-    const char* readFile(std::string &filepath);
+    const char* readFile(const std::string &filepath);
 
     template <typename... Args>
     void report(const char *loc, unsigned diag_id, Args &&... args) {

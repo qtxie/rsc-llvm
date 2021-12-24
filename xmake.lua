@@ -165,7 +165,7 @@ option("llvm")
     add_linkdirs("../../../llvm+clang+lld-13.0.0-x86_64-windows-msvc-debug/lib")
     add_includedirs("../../../llvm+clang+lld-13.0.0-x86_64-windows-msvc-debug/include")
 
-set_languages("cxx17")
+set_languages("cxx20")
 
 target("redsc")
     set_kind("binary")

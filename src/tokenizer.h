@@ -37,12 +37,6 @@ private:
 
     Token * scanDirectives(const char *p);
 
-    bool isHexChar(int c) {return strchr("ABCDEF", c);}
-
-    bool isDelimiter(int c) {
-        return (strchr(" \t\n\r[]();{}\"\v\f", c) || c == 0);
-    }
-
     Token * newToken(TokenBuffer &buf, TokenId id, const char *start, int len) {
         return new (buf.alloc()) Token{id, TokenKindAny, len, start};
     }

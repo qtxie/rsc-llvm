@@ -19,6 +19,8 @@ TOK(Eof)                 // End of file.
 
 TOK(Identifier)          // abcde123
 TOK(Refinement)          // /local
+TOK(SetColon)            // abc:
+TOK(GetColon)            // :abc
 
 TOK(Integer)
 TOK(Float)
@@ -33,7 +35,6 @@ OPERATOR(Div,                 "/")
 OPERATOR(Modulo,              "//")
 OPERATOR(Remainder,           "%")
 OPERATOR(Comma,               ",")
-OPERATOR(Colon,               ":")
 OPERATOR(Equal,               "=")
 OPERATOR(NotEqual,            "<>")
 OPERATOR(Hash,                "#")

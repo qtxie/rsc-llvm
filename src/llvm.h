@@ -17,6 +17,7 @@ namespace llvm {
 
     // ADT's.
     class StringRef;
+    class StringLiteral;
     class Twine;
     class VersionTuple;
     template<typename T> class ArrayRef;
@@ -46,6 +47,7 @@ using llvm::OwningArrayRef;
 using llvm::SaveAndRestore;
 using llvm::SmallString;
 using llvm::StringRef;
+using llvm::StringLiteral;
 using llvm::Twine;
 using llvm::VersionTuple;
 

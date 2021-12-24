@@ -15,6 +15,17 @@ static bool in_range(uint32_t *range, uint32_t c) {
     return false;
 }
 
+// The following characters are not allowed:
+//   whitespaces control-chars /\,[](){}"#%$@:;' 0 - 9
+//
+static bool isFirstSymbolChar(uint32_t c) {
+    static uint32_t range[] = {
+        '^', 'z', 'A', 'Z', '=', '?', '*', '+', '-', '.', 
+        '!', '!', '|', '|', '~', '~', 0x00A8, 0x2FA1F, -1
+    };
+    return in_range(range, c); 
+}
+
 // This function returns true if a given character is acceptable as
 // the first character of an identifier.
 //
@@ -41,6 +52,23 @@ static bool isFileChar(uint32_t c) {
     return in_range(range, c);
 }
 
+static bool isHexChar(int c) {return strchr("ABCDEF", c);}
+
+static bool isSpaceChar(int c) {
+    static constexpr StringLiteral s = StringLiteral::withInnerNUL(" \t\n\r[]();\v\f\0");
+    return s.contains(c);
+}
+
+static bool isDelimiter(int c) {
+    static constexpr StringLiteral s = StringLiteral::withInnerNUL(" \t\n\r[]();{}\"\v\f\0");
+    return s.contains(c);
+}
+
+static bool isPathDelimiter(int c) {
+    static constexpr StringLiteral s = StringLiteral::withInnerNUL(" \t\n\r[];{}\v\f\0");
+    return s.contains(c);
+}
+
 constexpr auto genKeywordsTable()
 {
     enum _KEYWORD_ {
@@ -56,7 +84,7 @@ constexpr auto genKeywordsTable()
 }
 
 static TokenId getSymbolId(const char *p, int len) {
-    static auto kw_table = genKeywordsTable();
+    static constexpr auto kw_table = genKeywordsTable();
 
     StringRef sym(p, len);
 
@@ -182,12 +210,11 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
     Token *cur = &head;
 
     // Skip the UTF-8 "BOM" marker
-    if (!memcmp(p, "\xef\xbb\xbf", 3)) {
-        p += 3;
-    }
+    if (!memcmp(p, "\xef\xbb\xbf", 3)) p += 3;
 
     while (*p) {
         bool has_space = false;
+        bool has_slash = false;
 
         // Skip whitespace characters
         // ' ','\t','\n','\r','\v','\f'
@@ -226,10 +253,11 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                     }
                 }
             } else {
-                if (isspace(p[1])) {    // e.g abc/ ef
+                if (isPathDelimiter(p[1])) {    // e.g abc/ ef
                     tokenError(p, err_invalid_token);
                 } else {
                     ADD_TOK(TokenIdSlash, p, 1);
+                    has_slash = true;
                 }
             }
             continue;
@@ -248,6 +276,18 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
             ADD_TOK(TokenIdString, p, len);
             p++;    // Skip ending "
             }
+            continue;
+
+        case ':': {
+            TokenId id = (has_space || has_slash) ? TokenIdGetColon : TokenIdSetColon;
+            if (
+                (id == TokenIdGetColon && !isFirstSymbolChar(p[1])) ||
+                (id == TokenIdSetColon && !isSpaceChar(p[1]))
+            ){
+                tokenError(p, err_invalid_token);
+            } else {
+                ADD_TOK(id, p, 1);
+            }}
             continue;
 
         case '#':

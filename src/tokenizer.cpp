@@ -30,13 +30,13 @@ static bool isFirstSymbolChar(uint32_t c) {
 // the first character of an identifier.
 //
 // The following characters are not allowed:
-//   whitespaces control-chars /\,[](){}"#%$@:;'
+//   whitespaces control-chars /\,[](){}"#%$@:;
 //
 // NOTE!!! We accept all the codepoints in range [0x00A8, 0x2FA1F], this is not safe.
 static bool isSymbolChar(uint32_t c) {
     static uint32_t range[] = {
         '^', 'z', 'A', 'Z', '0', '9', '=', '?', '*', '+', '-', '.', 
-        '!', '!', '|', '|', '~', '~', 0x00A8, 0x2FA1F, -1
+        '!', '!', '\'', '\'', '~', '~', '|', '|', 0x00A8, 0x2FA1F, -1
     };
     return in_range(range, c);
 }
@@ -86,13 +86,15 @@ constexpr auto genKeywordsTable()
 static TokenId getSymbolId(const char *p, int len) {
     static constexpr auto kw_table = genKeywordsTable();
 
+    if (*p == '\'') return TokenIdLitWord;
+
     StringRef sym(p, len);
 
     auto it = std::lower_bound(kw_table.begin(), kw_table.end(), sym, 
         [](const auto &a, const auto &b) {return -1 == a.first.compare_insensitive(b);});
 
     if (it == kw_table.end() || it->first != sym) {
-        return TokenIdIdentifier;
+        return TokenIdWord;
     } else {
         return it->second;
     }
@@ -360,7 +362,13 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
         // Symbol, i.e identifier
         int len = scanSymbol(p);
         if (len) {
-            ADD_TOK(getSymbolId(p, len), p, len);
+            auto id = getSymbolId(p, len);
+            if (id == TokenIdLitWord) {
+                p++;
+                len--;
+                if (len == 0) tokenError(p, err_invalid_token);
+            }
+            ADD_TOK(id, p, len);
             continue;
         }
 

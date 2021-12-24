@@ -17,10 +17,11 @@
 TOK(Unknown)             // Not a token.
 TOK(Eof)                 // End of file.
 
-TOK(Identifier)          // abcde123
+TOK(Word)                // abc123
 TOK(Refinement)          // /local
-TOK(SetColon)            // abc:
-TOK(GetColon)            // :abc
+TOK(LitWord)             // 'abc
+TOK(SetColon)            // colon at the tail. e.g. abc:
+TOK(GetColon)            // colon at the beginning. e.g. :abc
 
 TOK(Integer)
 TOK(Float)

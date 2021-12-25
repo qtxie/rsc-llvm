@@ -1,7 +1,8 @@
 if is_plat("windows") then
     add_defines("_HAS_EXCEPTIONS=0", "GTEST_HAS_RTTI=0")
     if is_mode("debug") then
-        add_cxflags("/MTd")
+        add_cxflags("/MTd", "/FS", "/Z7", "/Od")
+        add_ldflags("/DEBUG")
     end
 end
 

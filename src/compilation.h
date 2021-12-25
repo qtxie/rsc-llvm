@@ -32,6 +32,7 @@ public:
         std::string msg = llvm::formatv(getDiagnosticText(diag_id), std::forward<Args>(args)...).str();
         llvm::SourceMgr::DiagKind kind = getDiagnosticKind(diag_id);
         SrcMgr.PrintMessage(llvm::SMLoc::getFromPointer(loc), kind, msg);
+        assert(false);
         if (kind == llvm::SourceMgr::DK_Error)
             exit(EXIT_FAILURE);
     }

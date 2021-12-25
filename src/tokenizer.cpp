@@ -149,8 +149,6 @@ int Tokenizer::scanSymbol(const char *p) {
             break;
         p = q;
     }
-    // Check trailing character, e.g abc$ is invalid
-    if (strchr("%:#\\,$@", c)) tokenError(p, err_invalid_token);
     return p - start;
 }
 

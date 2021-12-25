@@ -54,11 +54,6 @@ static bool isFileChar(uint32_t c) {
 
 static bool isHexChar(int c) {return strchr("ABCDEF", c);}
 
-static bool isSpaceChar(int c) {
-    static constexpr StringLiteral s = StringLiteral::withInnerNUL(" \t\n\r[]();\v\f\0");
-    return s.contains(c);
-}
-
 static bool isDelimiter(int c) {
     static constexpr StringLiteral s = StringLiteral::withInnerNUL(" \t\n\r[]();{}\"\v\f\0");
     return s.contains(c);
@@ -69,6 +64,19 @@ static bool isPathDelimiter(int c) {
     return s.contains(c);
 }
 
+// Skip whitespaces and line comments
+//
+static const char * skipSpaces(const char *p) {
+    for (;;) {
+        while (isspace(*p)) p++;    // Skip ' ','\t','\n','\r','\v','\f'
+        if (*p == ';')
+            while (*p != '\n') p++;
+        else
+            break;
+    }
+    return p;
+}
+
 constexpr auto genKeywordsTable()
 {
     enum _KEYWORD_ {
@@ -77,7 +85,7 @@ constexpr auto genKeywordsTable()
         KeywordCount
     };
     std::array<std::pair<StringRef, TokenId>, KeywordCount> keywords = {{
-        #define KEYWORD(ID, STR_LOWER) {STR_LOWER, TokenIdKeyword ## ID},
+        #define KEYWORD(ID, STR_LOWER) {STR_LOWER, TokenId ## ID},
         #include "TokenId.def"
     }};
     return keywords;
@@ -85,8 +93,6 @@ constexpr auto genKeywordsTable()
 
 static TokenId getSymbolId(const char *p, int len) {
     static constexpr auto kw_table = genKeywordsTable();
-
-    if (*p == '\'') return TokenIdLitWord;
 
     StringRef sym(p, len);
 
@@ -135,13 +141,17 @@ uint32_t Tokenizer::decodeUtf8(const char *p, const char **new_pos) {
 
 int Tokenizer::scanSymbol(const char *p) {
     const char *start = p;
+    uint32_t c = 0;
     for (;;) {
         const char *q;
-        uint32_t c = decodeUtf8(p, &q);
+        c = decodeUtf8(p, &q);
         if (!isSymbolChar(c))
-            return p - start;
+            break;
         p = q;
     }
+    // Check trailing character, e.g abc$ is invalid
+    if (strchr("%:#\\,$@", c)) tokenError(p, err_invalid_token);
+    return p - start;
 }
 
 const char * Tokenizer::scanBinary(const char *p) {
@@ -155,6 +165,7 @@ const char * Tokenizer::scanByte(const char *p) {
 int Tokenizer::scanString(const char *p) {
     const char * start = p;
     while (*p != '"') {
+        if (*p == '\n' || *p == '\0') tokenError(p, err_invalid_token);
         p++;
     }
     return p - start;
@@ -164,7 +175,7 @@ int Tokenizer::scanFile(const char *p) {
     if (*p == '%') {
         p++;
         if (*p == '"') {
-            return scanString(p);
+            return scanString(p + 1);
         } else {
             const char *start = p;
             for (;;) {
@@ -216,10 +227,12 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
 
     while (*p) {
         bool has_space = false;
-        bool has_slash = false;
+        bool has_sign  = false;
+        bool has_apostrophe = false;
+        const char *p_less = nullptr;
 
         // Skip whitespace characters
-        // ' ','\t','\n','\r','\v','\f'
+        // 
         while (isspace(*p)) {
             p++;
             has_space = true;
@@ -227,16 +240,55 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
 
         switch (*p)
         {
-        #define CASE(ch, tok_id)                                       \
-            case ch:                                                   \
-                cur = cur->next = newToken(ctx.TokBuf, tok_id, p, 1);  \
-                p++;                                                   \
+        #define CASE(ch, tok_id)        \
+            case ch:                    \
+                ADD_TOK(tok_id, p, 1)   \
                 continue;
 
         CASE('[', TokenIdLBracket);
         CASE(']', TokenIdRBracket);
         CASE('(', TokenIdLParen);
         CASE(')', TokenIdRParen);
+
+        case '+': case '-': {
+            auto id = (*p == '+') ? TokenIdPlus : TokenIdMinus;
+            if (isDelimiter(p[1])) {
+                ADD_TOK(id, p, 1);
+                continue;
+            } else if (isdigit(p[1])) {     // follows a number
+                has_sign = true;
+                p++;
+                break;
+            } else {
+                break;
+            }}
+
+        case '%':
+            if (isDelimiter(p[1])) {
+                ADD_TOK(TokenIdRemainder, p, 1);
+            } else {
+                int len = scanFile(p);
+                p++;    // Skip %
+                if (len > 0) {
+                    bool is_quoted = (*p == '"');
+                    if (is_quoted) p++;
+                    ADD_TOK(TokenIdFile, p, len);
+                    if (is_quoted) p++;
+                } else {
+                    tokenError(p, err_invalid_token);
+                }
+            }
+            continue;
+
+        case '\'':
+            has_apostrophe = true;
+            p++;
+            if (*p != '<')
+                break;
+        case '<':
+            p_less = p;
+            while (*p == '<') p++;
+            break;
 
         case '/':
             if (has_space) {
@@ -259,7 +311,9 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                     tokenError(p, err_invalid_token);
                 } else {
                     ADD_TOK(TokenIdSlash, p, 1);
-                    has_slash = true;
+                    if (*p == ':') {
+                        ADD_TOK(TokenIdGetColon, p, 1);
+                    }
                 }
             }
             continue;
@@ -281,10 +335,10 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
             continue;
 
         case ':': {
-            TokenId id = (has_space || has_slash) ? TokenIdGetColon : TokenIdSetColon;
+            TokenId id = has_space ? TokenIdGetColon : TokenIdSetColon;
             if (
                 (id == TokenIdGetColon && !isFirstSymbolChar(p[1])) ||
-                (id == TokenIdSetColon && !isSpaceChar(p[1]))
+                (id == TokenIdSetColon && !isDelimiter(p[1]))
             ){
                 tokenError(p, err_invalid_token);
             } else {
@@ -309,16 +363,19 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                 // For non-trivial cases, e.g include file in macros
                 // We let the preprocessor handle them.
                 if (tok->id == TokenIdMacroInclude) {
-                    while (isspace(*p)) p++;
+                    p = skipSpaces(p);
                     int n = scanFile(p);
                     if (n > 0) {
                         p++;    // skip %
+                        bool is_quoted = (*p == '"');
+                        if (is_quoted) p++;
                         const char * buf = ctx.readFile(std::string(p, n));
                         Token *tk_end = nullptr;
                         tok = tokenize(buf, &tk_end);
                         cur->next = tok;
                         cur = tk_end;
                         p += n;
+                        if (is_quoted) p++;
                     } else {
                         return tokenError(p, err_expected, "file");
                     }
@@ -355,24 +412,30 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                     p++;
                 } else tokenError(p, err_invalid_token);
             }
+            if (has_sign) start--;
             cur = cur->next = newToken(ctx.TokBuf, id, start, p - start);
             continue;
         }
 
-        // Symbol, i.e identifier
+        // Word
         int len = scanSymbol(p);
-        if (len) {
-            auto id = getSymbolId(p, len);
-            if (id == TokenIdLitWord) {
-                p++;
-                len--;
-                if (len == 0) tokenError(p, err_invalid_token);
+        if (p_less) {
+            // Special word. e.g. < <> << <<< <<<< <- <= <<-= etc.
+            if (len > 0 && !strchr(">=-", *p)) {
+                tokenError(p, err_invalid_token);
+            } else {
+                len += (p - p_less);
+                p = p_less;
             }
-            ADD_TOK(id, p, len);
-            continue;
         }
 
-        tokenError(p, err_invalid_token);
+        if (len) {
+            auto id = has_apostrophe ? TokenIdLitWord : getSymbolId(p, len);
+            ADD_TOK(id, p, len);
+            continue;
+        } else if (has_apostrophe) {p--;}
+
+        if (*p) tokenError(p, err_invalid_token);
     }
 
     *end_token = cur;

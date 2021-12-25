@@ -24,7 +24,8 @@ TOK(Refinement)          // /local
 TOK(SetColon)            // colon at the tail. e.g. abc:
 TOK(GetColon)            // colon at the beginning. e.g. :abc
 
-TOK(Char)
+TOK(Hex)
+TOK(Byte)
 TOK(Integer)
 TOK(Float)
 TOK(String)

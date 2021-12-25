@@ -35,8 +35,8 @@ static bool isFirstSymbolChar(uint32_t c) {
 // NOTE!!! We accept all the codepoints in range [0x00A8, 0x2FA1F], this is not safe.
 static bool isSymbolChar(uint32_t c) {
     static uint32_t range[] = {
-        '^', 'z', 'A', 'Z', '0', '9', '=', '?', '*', '+', '-', '.', 
-        '!', '!', '\'', '\'', '~', '~', '|', '|', 0x00A8, 0x2FA1F, -1
+        '^', 'z', '-', '.', '!', '!', 'A', 'Z', '0', '9', '=', '?', '*', '+',
+        '\'', '\'', '~', '~', '|', '|', 0x00A8, 0x2FA1F, -1
     };
     return in_range(range, c);
 }
@@ -52,7 +52,10 @@ static bool isFileChar(uint32_t c) {
     return in_range(range, c);
 }
 
-static bool isHexChar(int c) {return strchr("ABCDEF", c);}
+static bool isHexChar(int c) {
+    static uint32_t range [] = {'0', '9', 'A', 'F', -1};
+    return in_range(range, c);
+}
 
 static bool isDelimiter(int c) {
     static constexpr StringLiteral s = StringLiteral::withInnerNUL(" \t\n\r[]();{}\"\v\f\0");
@@ -384,6 +387,25 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
             continue;
         default:
             break;
+        }
+
+        // Hexadecimal integer
+        // Rule: 2 8 hexa e: #"h"
+        // 04D2h AABBh 01h FFFFFFFFh
+        const char *start = p;
+        while (isHexChar(*p)) p++;
+        if (p > start) {
+            if (*p == 'h') {
+                int n = p - start;
+                if (n > 1 && n <= 8) {
+                    ADD_TOK(TokenIdHex, start, n);
+                    p++;    // skip 'h'
+                } else {
+                    tokenError(p, err_invalid_token);
+                }
+            } else {
+                p = start;
+            }
         }
 
         // Numeric literals

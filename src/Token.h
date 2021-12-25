@@ -11,12 +11,6 @@
 #include "Buffer.h"
 #include <llvm/ADT/StringRef.h>
 
-
-enum TokenKind : uint8_t {
-    TokenKindAny,
-    TokenKindWord
-};
-
 enum TokenId : uint8_t {
     #define TOK(ID) TokenId ## ID,
     #include "TokenId.def"
@@ -30,7 +24,7 @@ struct Hideset {
 
 struct Token {
     TokenId id;         // Token ID
-    TokenKind kind;     // Token Kind
+    TokenId kind;       // Token Kind, e.g Keyword is a word
     int len;            // Token length
     const char *loc;    // Token location
     Token *next;        // Next Token

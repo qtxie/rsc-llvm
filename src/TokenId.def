@@ -33,6 +33,7 @@ TOK(Float)
 TOK(String)
 TOK(MultilineString)
 TOK(File)
+TOK(Binary)
 
 OPERATOR(Plus,               "+")
 OPERATOR(Minus,              "-")

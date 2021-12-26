@@ -31,18 +31,18 @@ typedef unsigned char	REBYTE;     // unsigned byte data
 */
 enum LEX_DELIMIT_ENUM {
 	LEX_DELIMIT_SPACE,              /* 20 space */
-	LEX_DELIMIT_END_FILE,           /* 00 EOF */
 	LEX_DELIMIT_LINEFEED,           /* 0A line-feed */
 	LEX_DELIMIT_RETURN,             /* 0D return */
+	LEX_DELIMIT_END_FILE,           /* 00 EOF */
+	LEX_DELIMIT_SEMICOLON,          /* 3B ; */
 	LEX_DELIMIT_LEFT_PAREN,         /* 28 ( */
 	LEX_DELIMIT_RIGHT_PAREN,        /* 29 ) */
 	LEX_DELIMIT_LEFT_BRACKET,       /* 5B [ */
 	LEX_DELIMIT_RIGHT_BRACKET,      /* 5D ] */
-	LEX_DELIMIT_LEFT_BRACE,         /* 7B } */
+	LEX_DELIMIT_LEFT_BRACE,         /* 7B { */
 	LEX_DELIMIT_RIGHT_BRACE,        /* 7D } */
 	LEX_DELIMIT_QUOTE,              /* 22 " */
 	LEX_DELIMIT_SLASH,              /* 2F / - date, path, file */
-	LEX_DELIMIT_SEMICOLON,          /* 3B ; */
 	LEX_DELIMIT_UTF8_ERROR,
 	LEX_DELIMIT_MAX
 };
@@ -82,7 +82,7 @@ enum LEX_CLASS_ENUM {
 #define IS_LEX_AT_LEAST_NUMBER(c)       (Lex_Map[(REBYTE)c] >= LEX_NUMBER)
 
 /*
-**  Special Chars (encoded in the LEX_VALUE field)
+**  Special Chars
 */
 enum LEX_SPECIAL_ENUM {             /* The order is important! */
 	LEX_SPECIAL_AT,                 /* 40 @ - email */

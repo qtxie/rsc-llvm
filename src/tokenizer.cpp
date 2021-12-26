@@ -116,21 +116,30 @@ int Tokenizer::scanSymbol(const char *p) {
 int Tokenizer::scanBinary(const char *p) {
     const char * start = p;
     while (*p != '}') {
-        p++;
+        p = skipSpaces(p);
+        if (isHexChar(*p) && isHexChar(p[1]))
+            p += 2;
+        else
+            tokenError(p, err_invalid_token);
     }
     return p - start;
 }
 
 int Tokenizer::scanByte(const char *p) {
-    return 0;
+    int n = scanString(p);
+    if ((n == 1 && *p != '^') || (n > 1 && n < 8 && *p == '^')) {
+        return n;
+    } else {
+        tokenError(p, err_invalid_token);
+    }
 }
 
 int Tokenizer::scanMultilineString(const char *p) {
     const char * start = p;
-    while (*p != '}') {
-        p++;
-    }
-    return p - start;
+    if (p = strchr(p, '}'); p)
+        return p - start;
+    else
+        tokenError(p, err_invalid_token);
 }
 
 int Tokenizer::scanString(const char *p) {
@@ -290,7 +299,7 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                     }
                 }
             } else {
-                if (IS_LEX_AT_LEAST_SPECIAL(p[1])) {
+                if (Lex_Map[(REBYTE)p[1]] > LEX_DELIMIT_SEMICOLON) {
                     ADD_TOK(TokenIdSlash, p, 1);
                     if (*p == ':') {
                         ADD_TOK(TokenIdGetColon, p, 1);
@@ -340,10 +349,16 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
         case '#':
             p++;
             if (*p == '{') {           // Binary arrays
+                p++;
                 int n = scanBinary(p);
+                ADD_TOK(TokenIdBinary, p, n)
+                p++;    // skip '}'
             }
             else if (*p == '"') {
+                p++;
                 int n = scanByte(p);
+                ADD_TOK(TokenIdByte, p, n)
+                p++;    // skip '"'
             }
             else {
                 Token *tok = scanDirectives(p);

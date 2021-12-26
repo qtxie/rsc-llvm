@@ -4,7 +4,7 @@
  * You may obtain a copy of the License at
  * https://github.com/red/red/blob/master/BSD-3-License.txt
  * 
- * Summary: The compilation context for each file
+ * Summary: The compilation context for each compilation unit
 */
 
 #ifndef RED_SYSTEM_COMPILATION_H

@@ -31,9 +31,9 @@ private:
     int scanSymbol(const char *p);
     int scanFile(const char *p);
     int scanString(const char *p);
-
-    const char * scanBinary(const char *p);
-    const char * scanByte(const char *p);
+    int scanMultilineString(const char *p);
+    int scanBinary(const char *p);
+    int scanByte(const char *p);
 
     Token * scanDirectives(const char *p);
 

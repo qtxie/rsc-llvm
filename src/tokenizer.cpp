@@ -32,10 +32,10 @@ static bool isFirstSymbolChar(uint32_t c) {
 // The following characters are not allowed:
 //   whitespaces control-chars /\,[](){}"#%$@:;
 //
-// NOTE!!! We accept all the codepoints in range [0x00A8, 0x2FA1F], this is not safe.
+// NOTE!!! We accept all the codepoints in range [0x00A8, 0x2FA1F], is it safe?
 static bool isSymbolChar(uint32_t c) {
     static uint32_t range[] = {
-        '^', 'z', '-', '.', '!', '!', 'A', 'Z', '0', '9', '=', '?', '*', '+',
+        '^', 'z', '-', '.', '!', '!', 'A', 'Z', '0', '9', '<', '?', '*', '+',
         '\'', '\'', '~', '~', '|', '|', 0x00A8, 0x2FA1F, -1
     };
     return in_range(range, c);
@@ -155,12 +155,24 @@ int Tokenizer::scanSymbol(const char *p) {
     return p - start;
 }
 
-const char * Tokenizer::scanBinary(const char *p) {
-    return p;
+int Tokenizer::scanBinary(const char *p) {
+    const char * start = p;
+    while (*p != '}') {
+        p++;
+    }
+    return p - start;
 }
 
-const char * Tokenizer::scanByte(const char *p) {
-    return p;
+int Tokenizer::scanByte(const char *p) {
+    return 0;
+}
+
+int Tokenizer::scanMultilineString(const char *p) {
+    const char * start = p;
+    while (*p != '}') {
+        p++;
+    }
+    return p - start;
 }
 
 int Tokenizer::scanString(const char *p) {
@@ -193,8 +205,8 @@ int Tokenizer::scanFile(const char *p) {
 }
 
 Token * Tokenizer::scanDirectives(const char *p) {
-    const static std::array<std::pair<StringRef, TokenId>, 14> directives = {{
-        {"include", TokenIdMacroInclude}, {"define", TokenIdMacroDefine},
+    const static std::array<std::pair<StringRef, TokenId>, 15> directives = {{
+        {"include", TokenIdMacroInclude}, {"define", TokenIdMacroDefine}, {"script", TokenIdMacroScript},
         {"import", TokenIdMacroImport},   {"syscall", TokenIdMacroSyscall},
         {"enum", TokenIdMacroEnum},       {"if", TokenIdMacroIf},
         {"either", TokenIdMacroEither},   {"switch", TokenIdMacroSwitch},
@@ -212,7 +224,7 @@ Token * Tokenizer::scanDirectives(const char *p) {
             return newToken(ctx.TokBuf, D.second, p, n);
         }
     }
-    return tokenError(p, err_unknown_directive);
+    return newToken(ctx.TokBuf, TokenIdIssue, p, n);
 }
 
 #define ADD_TOK(ID, LOC, LEN) \
@@ -230,7 +242,6 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
         bool has_space = false;
         bool has_sign  = false;
         bool has_apostrophe = false;
-        const char *p_less = nullptr;
 
         // Skip whitespace characters
         // 
@@ -284,12 +295,15 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
         case '\'':
             has_apostrophe = true;
             p++;
-            if (*p != '<')
-                break;
-        case '<':
-            p_less = p;
-            while (*p == '<') p++;
             break;
+
+        case '~': {  // Special case: Red generates many words start with it.
+            int n = 1;
+            while (!isDelimiter(p[n])) n++;
+            auto id = (p[n - 1] == ':') ? TokenIdSetWord : TokenIdWord;
+            ADD_TOK(id, p, n);
+            }
+            continue;
 
         case '/':
             if (has_space) {
@@ -335,6 +349,14 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
             }
             continue;
 
+        case '{': {
+            p++;
+            int len = scanMultilineString(p);
+            ADD_TOK(TokenIdMultilineString, p, len);
+            p++;
+            }
+            continue;
+
         case ':': {
             TokenId id = has_space ? TokenIdGetColon : TokenIdSetColon;
             if (
@@ -350,10 +372,10 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
         case '#':
             p++;
             if (*p == '{') {           // Binary arrays
-                p = scanBinary(p);
+                int n = scanBinary(p);
             }
             else if (*p == '"') {
-                p = scanByte(p);
+                int n = scanByte(p);
             }
             else {
                 Token *tok = scanDirectives(p);
@@ -439,16 +461,6 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
 
         // Word
         int len = scanSymbol(p);
-        if (p_less) {
-            // Special word. e.g. < <> << <<< <<<< <- <= <<-= etc.
-            if (len > 0 && !strchr(">=-", *p)) {
-                tokenError(p, err_invalid_token);
-            } else {
-                len += (p - p_less);
-                p = p_less;
-            }
-        }
-
         if (len) {
             auto id = has_apostrophe ? TokenIdLitWord : getSymbolId(p, len);
             ADD_TOK(id, p, len);

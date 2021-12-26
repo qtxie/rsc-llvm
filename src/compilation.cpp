@@ -4,21 +4,24 @@
  * You may obtain a copy of the License at
  * https://github.com/red/red/blob/master/BSD-3-License.txt
  * 
- * Summary: The compilation context for each file
+ * Summary: The compilation context for each compilation unit
 */
 
 #include "Compilation.h"
 #include "Tokenizer.h"
+#include "TimeMeasuring.h"
 #include <llvm/Support/WithColor.h>
 
 void Compilation::run() {
     const char *buffer = readFile(MainFile);
     Token *end_tok = nullptr;
+    TimeMeasuring t(true);
     Token *tok = Tokenizer(*this).tokenize(buffer, &end_tok);
-    while (tok) {
-        llvm::errs() << TokenNames[tok->id] << ":" << tok->name() << " ";
-        tok = tok->next;
-    }
+    llvm::errs() << "Tokenize time: " << t.getTimeFromBeginning() << "ms\n";
+    //while (tok) {
+        //llvm::errs() << TokenNames[tok->id] << ":" << tok->name() << " ";
+       // tok = tok->next;
+   // }
 }
 
 const char* Compilation::readFile(const std::string &filepath) {   

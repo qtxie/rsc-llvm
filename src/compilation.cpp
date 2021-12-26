@@ -18,10 +18,10 @@ void Compilation::run() {
     TimeMeasuring t(true);
     Token *tok = Tokenizer(*this).tokenize(buffer, &end_tok);
     llvm::errs() << "Tokenize time: " << t.getTimeFromBeginning() << "ms\n";
-    while (tok) {
-        llvm::errs() << TokenNames[tok->id] << ":" << tok->name() << " ";
-       tok = tok->next;
-   }
+//     while (tok) {
+//         llvm::errs() << TokenNames[tok->id] << ":" << tok->name() << " ";
+//        tok = tok->next;
+//    }
 }
 
 const char* Compilation::readFile(const std::string &filepath) {   

@@ -3,8 +3,7 @@ if is_plat("windows") then
     if is_mode("debug") then
         add_cxflags("/MTd", "/FS", "/Z7", "/Od")
         add_ldflags("/DEBUG")
-    end
-    if is_mode("release") then
+    elseif is_mode("release") then
         add_cxflags("/O2")
     end
 end
@@ -166,8 +165,13 @@ option("llvm")
         "LLVMSupport",
         "LLVMDemangle"
     )
-    add_linkdirs("../../../llvm+clang+lld-13.0.0-x86_64-windows-msvc-release-mt/lib")
-    add_includedirs("../../../llvm+clang+lld-13.0.0-x86_64-windows-msvc-release-mt/include")
+    if is_mode("debug") then 
+        add_linkdirs("../../../llvm+clang+lld-13.0.0-x86_64-windows-msvc-debug/lib")
+        add_includedirs("../../../llvm+clang+lld-13.0.0-x86_64-windows-msvc-debug/include")
+    elseif is_mode("release") then
+        add_linkdirs("../../../llvm+clang+lld-13.0.0-x86_64-windows-msvc-release-mt/lib")
+        add_includedirs("../../../llvm+clang+lld-13.0.0-x86_64-windows-msvc-release-mt/include")
+    end
 
 set_languages("cxx20")
 

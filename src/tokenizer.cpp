@@ -7,7 +7,7 @@
 
 #define USE_UNICODE
 
-#include "l-scan.h"
+#include "LexMap.h"
 #include "Tokenizer.h"
 #include "Compilation.h"
 
@@ -16,32 +16,6 @@ static bool in_range(uint32_t *range, uint32_t c) {
         if (range[i] <= c && c <= range[i + 1])
         return true;
     return false;
-}
-
-// The following characters are not allowed:
-//   whitespaces control-chars /\,[](){}"#%$@:;' 0 - 9
-//
-static bool isFirstSymbolChar(uint32_t c) {
-    static uint32_t range[] = {
-        '^', 'z', 'A', 'Z', '=', '?', '*', '+', '-', '.', 
-        '!', '!', '|', '|', '~', '~', 0x00A8, 0x2FA1F, -1
-    };
-    return in_range(range, c); 
-}
-
-// This function returns true if a given character is acceptable as
-// the first character of an identifier.
-//
-// The following characters are not allowed:
-//   whitespaces control-chars /\,[](){}"#%$@:;
-//
-// NOTE!!! We accept all the codepoints in range [0x00A8, 0x2FA1F], is it safe?
-static bool isSymbolChar(uint32_t c) {
-    static uint32_t range[] = {
-        '^', 'z', '-', '.', '!', '!', 'A', 'Z', '0', '9', '<', '?', '*', '+',
-        '\'', '\'', '~', '~', '|', '|', 0x00A8, 0x2FA1F, -1
-    };
-    return in_range(range, c);
 }
 
 // The following characters are not allowed:
@@ -60,21 +34,11 @@ static bool isHexChar(int c) {
     return in_range(range, c);
 }
 
-static bool isDelimiter(int c) {
-    static constexpr StringLiteral s = StringLiteral::withInnerNUL(" \t\n\r[]();{}\"\v\f\0");
-    return s.contains(c);
-}
-
-static bool isPathDelimiter(int c) {
-    static constexpr StringLiteral s = StringLiteral::withInnerNUL(" \t\n\r[];{}\v\f\0");
-    return s.contains(c);
-}
-
 // Skip whitespaces and line comments
 //
 static const char * skipSpaces(const char *p) {
     for (;;) {
-        while (isspace(*p)) p++;    // Skip ' ','\t','\n','\r','\v','\f'
+        while (IS_LEX_ANY_SPACE(*p)) p++;
         if (*p == ';')
             while (*p != '\n') p++;
         else
@@ -102,7 +66,7 @@ static TokenId getSymbolId(const char *p, int len) {
 
     StringRef sym(p, len);
 
-    auto it = std::lower_bound(kw_table.begin(), kw_table.end(), sym, 
+    auto it = std::lower_bound(kw_table.begin(), kw_table.end(), sym,
         [](const auto &a, const auto &b) {return -1 == a.first.compare_insensitive(b);});
 
     if (it == kw_table.end() || it->first != sym) {
@@ -112,37 +76,35 @@ static TokenId getSymbolId(const char *p, int len) {
     }
 }
 
-uint32_t Tokenizer::decodeUtf8(const char *p, const char **new_pos) {
-    if ((unsigned char)*p < 128) {
-        *new_pos = p + 1;
-        return *p;
-    }
+constexpr auto genDirectivesTable()
+{
+    enum _MACRO_ {
+        #define MACRO(ID, STR_LOWER) _MACRO ## ID,
+        #include "TokenId.def"
+        MacroCount
+    };
+    std::array<std::pair<StringRef, TokenId>, MacroCount> keywords = {{
+        #define MACRO(ID, STR_LOWER) {STR_LOWER, TokenIdMacro ## ID},
+        #include "TokenId.def"
+    }};
+    return keywords;
+}
 
-    const char *start = p;
-    int len;
-    uint32_t c;
+Token * Tokenizer::scanDirectives(const char *p) {
+    static constexpr auto directives = genDirectivesTable();
 
-    if ((unsigned char)*p >= 0b11110000) {
-        len = 4;
-        c = *p & 0b111;
-    } else if ((unsigned char)*p >= 0b11100000) {
-        len = 3;
-        c = *p & 0b1111;
-    } else if ((unsigned char)*p >= 0b11000000) {
-        len = 2;
-        c = *p & 0b11111;
+    int n = scanSymbol(p);
+    if (n == 0) return tokenError(p, err_invalid_token);
+
+    StringRef sym(p, n);
+    auto it = std::lower_bound(directives.begin(), directives.end(), sym,
+        [](const auto &a, const auto &b) {return -1 == a.first.compare(b);});
+
+    if (it == directives.end() || it->first != sym) {
+        return newToken(ctx.TokBuf, TokenIdIssue, p, n);
     } else {
-        tokenError(p, err_invalid_utf8);
+        return newToken(ctx.TokBuf, it->second, p, n);
     }
-
-    for (int i = 1; i < len; i++) {
-        if ((unsigned char)p[i] >> 6 != 0b10)
-            tokenError(p, err_invalid_utf8);
-        c = (c << 6) | (p[i] & 0b111111);
-    }
-
-    *new_pos = p + len;
-    return c;
 }
 
 int Tokenizer::scanSymbol(const char *p) {
@@ -200,27 +162,37 @@ int Tokenizer::scanFile(const char *p) {
     }
 }
 
-Token * Tokenizer::scanDirectives(const char *p) {
-    const static std::array<std::pair<StringRef, TokenId>, 15> directives = {{
-        {"include", TokenIdMacroInclude}, {"define", TokenIdMacroDefine}, {"script", TokenIdMacroScript},
-        {"import", TokenIdMacroImport},   {"syscall", TokenIdMacroSyscall},
-        {"enum", TokenIdMacroEnum},       {"if", TokenIdMacroIf},
-        {"either", TokenIdMacroEither},   {"switch", TokenIdMacroSwitch},
-        {"case", TokenIdMacroCase},       {"verbose", TokenIdMacroVerbose},
-        {"u16", TokenIdMacroU16},         {"call", TokenIdMacroCall},
-        {"export", TokenIdMacroExport},   {"inline", TokenIdMacroInline}
-    }};
-
-    int n = scanSymbol(p);
-    if (n == 0) return tokenError(p, err_invalid_token);
-
-    StringRef sym(p, n);
-    for (auto& D : directives) {
-        if (sym.equals(D.first)) {
-            return newToken(ctx.TokBuf, D.second, p, n);
-        }
+uint32_t Tokenizer::decodeUtf8(const char *p, const char **new_pos) {
+    if ((unsigned char)*p < 128) {
+        *new_pos = p + 1;
+        return *p;
     }
-    return newToken(ctx.TokBuf, TokenIdIssue, p, n);
+
+    const char *start = p;
+    int len;
+    uint32_t c;
+
+    if ((unsigned char)*p >= 0b11110000) {
+        len = 4;
+        c = *p & 0b111;
+    } else if ((unsigned char)*p >= 0b11100000) {
+        len = 3;
+        c = *p & 0b1111;
+    } else if ((unsigned char)*p >= 0b11000000) {
+        len = 2;
+        c = *p & 0b11111;
+    } else {
+        tokenError(p, err_invalid_utf8);
+    }
+
+    for (int i = 1; i < len; i++) {
+        if ((unsigned char)p[i] >> 6 != 0b10)
+            tokenError(p, err_invalid_utf8);
+        c = (c << 6) | (p[i] & 0b111111);
+    }
+
+    *new_pos = p + len;
+    return c;
 }
 
 #define ADD_TOK(ID, LOC, LEN) \
@@ -318,13 +290,13 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                     }
                 }
             } else {
-                if (isPathDelimiter(p[1])) {    // e.g abc/ ef
-                    tokenError(p, err_invalid_token);
-                } else {
+                if (IS_LEX_AT_LEAST_SPECIAL(p[1])) {
                     ADD_TOK(TokenIdSlash, p, 1);
                     if (*p == ':') {
                         ADD_TOK(TokenIdGetColon, p, 1);
                     }
+                } else {  // e.g abc/ ef
+                    tokenError(p, err_invalid_token);
                 }
             }
             continue;

@@ -11,7 +11,7 @@
 #define KEYWORD(ID, ID_LOWER) TOK(ID)
 #endif
 #ifndef MACRO
-#define MACRO(ID) TOK(Macro ## ID)
+#define MACRO(ID, ID_LOWER) TOK(Macro ## ID)
 #endif
 
 TOK(Unknown)             // Not a token.
@@ -96,21 +96,22 @@ KEYWORD(While,               "while" )
 KEYWORD(With,                "with"  )
 KEYWORD(Xor,                 "xor"   )
 
-MACRO(Call)
-MACRO(Case)
-MACRO(Define)
-MACRO(Either)
-MACRO(Enum)
-MACRO(Export)
-MACRO(Import)
-MACRO(Include)
-MACRO(If)
-MACRO(Inline)
-MACRO(Script)
-MACRO(Switch)
-MACRO(Syscall)
-MACRO(U16)
-MACRO(Verbose)
+// @@ Note: Keep in ascend order
+MACRO(Call,                 "call")
+MACRO(Case,                 "case")
+MACRO(Define,               "define")
+MACRO(Either,               "either")
+MACRO(Enum,                 "enum")
+MACRO(Export,               "export")
+MACRO(If,                   "if")
+MACRO(Import,               "import")
+MACRO(Include,              "include")
+MACRO(Inline,               "inline")
+MACRO(Script,               "script")
+MACRO(Switch,               "switch")
+MACRO(Syscall,              "syscall")
+MACRO(U16,                  "u16")
+MACRO(Verbose,              "verbose")
 
 #undef MACRO
 #undef KEYWORD

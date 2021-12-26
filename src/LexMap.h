@@ -1,5 +1,5 @@
-#ifndef RED_SYSTEM_L_SCAN_H
-#define RED_SYSTEM_L_SCAN_H
+#ifndef RED_SYSTEM_LEXMAP_H
+#define RED_SYSTEM_LEXMAP_H
 
 //
 // The source code in this file is taken from REBOL: 
@@ -315,4 +315,4 @@ enum LEX_SPECIAL_ENUM {             /* The order is important! */
 	LEX_WORD,LEX_WORD,LEX_WORD,LEX_UTFE
 };
 
-#endif /* RED_SYSTEM_L_SCAN_H */
+#endif /* RED_SYSTEM_LEXMAP_H */

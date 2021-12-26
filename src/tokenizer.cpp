@@ -5,6 +5,9 @@
  * https://github.com/red/red/blob/master/BSD-3-License.txt
 */
 
+#define USE_UNICODE
+
+#include "l-scan.h"
 #include "Tokenizer.h"
 #include "Compilation.h"
 
@@ -144,14 +147,7 @@ uint32_t Tokenizer::decodeUtf8(const char *p, const char **new_pos) {
 
 int Tokenizer::scanSymbol(const char *p) {
     const char *start = p;
-    uint32_t c = 0;
-    for (;;) {
-        const char *q;
-        c = decodeUtf8(p, &q);
-        if (!isSymbolChar(c))
-            break;
-        p = q;
-    }
+    while(IS_LEX_AT_LEAST_WORD(*p)) p++;
     return p - start;
 }
 
@@ -245,7 +241,7 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
 
         // Skip whitespace characters
         // 
-        while (isspace(*p)) {
+        while (IS_LEX_ANY_SPACE(*p)) {
             p++;
             has_space = true;
         }
@@ -264,10 +260,10 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
 
         case '+': case '-': {
             auto id = (*p == '+') ? TokenIdPlus : TokenIdMinus;
-            if (isDelimiter(p[1])) {
+            if (IS_LEX_DELIMIT(p[1])) {
                 ADD_TOK(id, p, 1);
                 continue;
-            } else if (isdigit(p[1])) {     // follows a number
+            } else if (IS_LEX_NUMBER(p[1])) {     // follows a number
                 has_sign = true;
                 p++;
                 break;
@@ -276,7 +272,7 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
             }}
 
         case '%':
-            if (isDelimiter(p[1])) {
+            if (IS_LEX_DELIMIT(p[1])) {
                 ADD_TOK(TokenIdRemainder, p, 1);
             } else {
                 int len = scanFile(p);
@@ -299,7 +295,7 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
 
         case '~': {  // Special case: Red generates many words start with it.
             int n = 1;
-            while (!isDelimiter(p[n])) n++;
+            while (!IS_LEX_DELIMIT(p[n])) n++;
             auto id = (p[n - 1] == ':') ? TokenIdSetWord : TokenIdWord;
             ADD_TOK(id, p, n);
             }
@@ -307,10 +303,10 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
 
         case '/':
             if (has_space) {
-                if (isDelimiter(p[1])) {
+                if (IS_LEX_DELIMIT(p[1])) {
                     ADD_TOK(TokenIdDiv, p, 1);
                 }
-                else if (p[1] == '/' && isDelimiter(p[2])) {
+                else if (p[1] == '/' && IS_LEX_DELIMIT(p[2])) {
                     ADD_TOK(TokenIdModulo, p, 2);
                 } else {   // Refinement
                     p++;
@@ -360,8 +356,8 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
         case ':': {
             TokenId id = has_space ? TokenIdGetColon : TokenIdSetColon;
             if (
-                (id == TokenIdGetColon && !isFirstSymbolChar(p[1])) ||
-                (id == TokenIdSetColon && !isDelimiter(p[1]))
+                (id == TokenIdGetColon && !IS_LEX_WORD(p[1])) ||
+                (id == TokenIdSetColon && !IS_LEX_DELIMIT(p[1]))
             ){
                 tokenError(p, err_invalid_token);
             } else {
@@ -432,13 +428,13 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
 
         // Numeric literals
         // E.g. 123  1e3  1.2  .12  ,12  123'45  123'45E+2  1,23e-2
-        if (isdigit(*p) || ((*p == '.' || *p == ',') && isdigit(p[1]))) {
-            TokenId id = isdigit(*p) ? TokenIdInteger : TokenIdFloat;
+        if (IS_LEX_NUMBER(*p) || ((*p == '.' || *p == ',') && IS_LEX_NUMBER(p[1]))) {
+            TokenId id = IS_LEX_NUMBER(*p) ? TokenIdInteger : TokenIdFloat;
             bool has_dot = (id == TokenIdFloat);
             bool has_exp = false;
             const char *start = p++;
-            while (!isDelimiter(*p)) {
-                if (isdigit(*p) || *p == '\'') {
+            while (!IS_LEX_DELIMIT(*p)) {
+                if (IS_LEX_NUMBER(*p) || *p == '\'') {
                     p++;
                 } else if (*p == 'e' || *p == 'E') {
                     if (has_exp) tokenError(p, err_invalid_token);

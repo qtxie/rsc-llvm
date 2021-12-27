@@ -26,3 +26,15 @@
 // standard's wording:
 // https://www.spinellis.gr/blog/20060626/cpp.algo.pdf
 
+#include "Preprocess.h"
+
+Token * Preprocess::preprocess(Token *tok) {
+    Token head = {};
+    Token *cur = &head;
+
+    while (tok->id != TokenIdEof) {
+        tok = tok->next;
+    }
+
+    return head.next;
+}

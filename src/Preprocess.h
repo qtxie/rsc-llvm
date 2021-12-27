@@ -8,5 +8,21 @@
 #ifndef RED_SYSTEM_PREPROCESS_H
 #define RED_SYSTEM_PREPROCESS_H
 
+#include "LLVM.h"
+#include "Token.h"
+
+class Compilation;
+
+class Preprocess
+{
+private:
+    Compilation &ctx;
+
+public:
+    Preprocess(Compilation &c) : ctx(c) {};
+    Preprocess(Compilation &&) = delete;  // prevents rvalue binding
+
+    Token * preprocess(Token *tok);
+};
 
 #endif /* RED_SYSTEM_PREPROCESS_H */

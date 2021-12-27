@@ -9,6 +9,7 @@
 
 #include "Compilation.h"
 #include "Tokenizer.h"
+#include "Preprocess.h"
 #include "TimeMeasuring.h"
 #include <llvm/Support/WithColor.h>
 #include <llvm/Support/Path.h>
@@ -62,7 +63,7 @@ std::string Compilation::toNativePath(const char *p, int len) {
 }
 
 const char* Compilation::readFile(const std::string &filepath) {
-    llvm::errs() << "Reading file: " << filepath << "\n";
+    //llvm::errs() << "Reading file: " << filepath << "\n";
     llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> file_or_err = llvm::MemoryBuffer::getFile(filepath);
 
     if (std::error_code err = file_or_err.getError()) {
@@ -94,11 +95,16 @@ Token * Compilation::tokenizeFile(const std::string &filepath, Token **end_token
 void Compilation::run() {
     TimeMeasuring t(true);
 
+    t.insertBreakpoint("tokenizer");
     Token *end_tok = nullptr;
     Token *tok = tokenizeFile(MainFile, &end_tok);
-    llvm::errs() << "Tokenize time: " << t.getTimeFromBeginning() << "ms\n";
+    llvm::errs() << "Tokenize time: " << t.getTimeFromBreakpoint("tokenizer") << "ms\n";
 //     while (tok) {
 //         llvm::errs() << TokenNames[tok->id] << ":" << tok->name() << " ";
 //        tok = tok->next;
 //    }
+    t.insertBreakpoint("preprocess");
+    tok = Preprocess(*this).preprocess(tok);
+    llvm::errs() << "Preprocess time: " << t.getTimeFromBreakpoint("preprocess") << "ms\n";
+
 }

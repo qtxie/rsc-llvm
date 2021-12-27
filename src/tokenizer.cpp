@@ -120,14 +120,16 @@ int Tokenizer::scanBinary(const char *p) {
         if (isHexChar(*p) && isHexChar(p[1]))
             p += 2;
         else
-            tokenError(p, err_invalid_token);
+            if (*p != '}') tokenError(p, err_invalid_token);
     }
     return p - start;
 }
 
 int Tokenizer::scanByte(const char *p) {
     int n = scanString(p);
-    if ((n == 1 && *p != '^') || (n > 1 && n < 8 && *p == '^')) {
+    if (n == 1 && *p == '^' && p[2] == '"') {  // #"^""
+        return 2;
+    } else if ((n == 1 && *p != '^') || (n > 1 && n < 8 && *p == '^')) {
         return n;
     } else {
         tokenError(p, err_invalid_token);
@@ -231,13 +233,65 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
         {
         #define CASE(ch, tok_id)        \
             case ch:                    \
-                ADD_TOK(tok_id, p, 1)   \
+                ADD_TOK(tok_id, p, 1);  \
                 continue;
 
-        CASE('[', TokenIdLBracket);
         CASE(']', TokenIdRBracket);
-        CASE('(', TokenIdLParen);
         CASE(')', TokenIdRParen);
+
+        case '(':
+            ADD_TOK(TokenIdLParen, p, 1);
+            goto additional_check;
+
+        case '[':
+            ADD_TOK(TokenIdLBracket, p, 1);
+        additional_check:
+            has_space = true;
+            if (*p == ':') goto case_colon;
+            if (*p == '/') goto case_slash;
+            continue;
+
+        case ':': {
+        case_colon:
+            TokenId id = has_space ? TokenIdGetColon : TokenIdSetColon;
+            if (
+                (id == TokenIdGetColon && !IS_LEX_WORD(p[1])) ||
+                (id == TokenIdSetColon && !IS_LEX_DELIMIT(p[1]))
+            ){
+                tokenError(p, err_invalid_token);
+            } else {
+                ADD_TOK(id, p, 1);
+            }}
+            continue;
+
+        case '/':
+        case_slash:
+            if (has_space) {
+                if (IS_LEX_DELIMIT(p[1])) {
+                    ADD_TOK(TokenIdDiv, p, 1);
+                }
+                else if (p[1] == '/' && IS_LEX_DELIMIT(p[2])) {
+                    ADD_TOK(TokenIdModulo, p, 2);
+                } else {   // Refinement
+                    p++;
+                    int len = scanSymbol(p);
+                    if (len) {
+                        ADD_TOK(TokenIdRefinement, p, len);
+                    } else {
+                        tokenError(p, err_invalid_token);
+                    }
+                }
+            } else {
+                if (Lex_Map[p[1]] > LEX_DELIMIT_SEMICOLON) {
+                    ADD_TOK(TokenIdSlash, p, 1);
+                    if (*p == ':') {
+                        ADD_TOK(TokenIdGetColon, p, 1);
+                    }
+                } else {  // e.g abc/ ef
+                    tokenError(p, err_invalid_token);
+                }
+            }
+            continue;
 
         case '+': case '-': {
             auto id = (*p == '+') ? TokenIdPlus : TokenIdMinus;
@@ -282,34 +336,6 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
             }
             continue;
 
-        case '/':
-            if (has_space) {
-                if (IS_LEX_DELIMIT(p[1])) {
-                    ADD_TOK(TokenIdDiv, p, 1);
-                }
-                else if (p[1] == '/' && IS_LEX_DELIMIT(p[2])) {
-                    ADD_TOK(TokenIdModulo, p, 2);
-                } else {   // Refinement
-                    p++;
-                    int len = scanSymbol(p);
-                    if (len) {
-                        ADD_TOK(TokenIdRefinement, p, len);
-                    } else {
-                        tokenError(p, err_invalid_token);
-                    }
-                }
-            } else {
-                if (Lex_Map[(REBYTE)p[1]] > LEX_DELIMIT_SEMICOLON) {
-                    ADD_TOK(TokenIdSlash, p, 1);
-                    if (*p == ':') {
-                        ADD_TOK(TokenIdGetColon, p, 1);
-                    }
-                } else {  // e.g abc/ ef
-                    tokenError(p, err_invalid_token);
-                }
-            }
-            continue;
-
         case ';':
             // Skip line comments
             // NOTE: we don't bother with \r as the line break as it's rarely used now
@@ -332,18 +358,6 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
             ADD_TOK(TokenIdMultilineString, p, len);
             p++;
             }
-            continue;
-
-        case ':': {
-            TokenId id = has_space ? TokenIdGetColon : TokenIdSetColon;
-            if (
-                (id == TokenIdGetColon && !IS_LEX_WORD(p[1])) ||
-                (id == TokenIdSetColon && !IS_LEX_DELIMIT(p[1]))
-            ){
-                tokenError(p, err_invalid_token);
-            } else {
-                ADD_TOK(id, p, 1);
-            }}
             continue;
 
         case '#':
@@ -375,9 +389,8 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                         p++;    // skip %
                         bool is_quoted = (*p == '"');
                         if (is_quoted) p++;
-                        const char * buf = ctx.readFile(std::string(p, n));
                         Token *tk_end = nullptr;
-                        tok = tokenize(buf, &tk_end);
+                        tok = ctx.tokenizeFile(ctx.toNativePath(p, n), &tk_end);
                         cur->next = tok;
                         cur = tk_end;
                         p += n;
@@ -392,35 +405,41 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
             continue;
         default:
             break;
-        }
+        }  
 
         // Hexadecimal integer
         // Rule: 2 8 hexa e: #"h"
         // 04D2h AABBh 01h FFFFFFFFh
-        const char *start = p;
-        while (isHexChar(*p)) p++;
-        if (p > start) {
-            if (*p == 'h') {
-                int n = p - start;
-                if (n > 1 && n <= 8) {
-                    ADD_TOK(TokenIdHex, start, n);
-                    p++;    // skip 'h'
-                } else {
-                    tokenError(p, err_invalid_token);
-                }
+        int len = 0;
+        while (isHexChar(p[len])) len++;
+        if (len && p[len] == 'h') {
+            if (len > 1 && len <= 8) {
+                ADD_TOK(TokenIdHex, p, len);
+                p++;    // skip 'h'
+                continue;
             } else {
-                p = start;
+                tokenError(p, err_invalid_token);
             }
         }
 
         // Numeric literals
         // E.g. 123  1e3  1.2  .12  ,12  123'45  123'45E+2  1,23e-2
         if (IS_LEX_NUMBER(*p) || ((*p == '.' || *p == ',') && IS_LEX_NUMBER(p[1]))) {
+            static constexpr StringLiteral inf("1.#inf");
+            static constexpr StringLiteral nan("1.#nan");
+            StringRef s(p, 6);
+            if (
+                (0 == inf.compare_insensitive(s) || 0 == nan.compare_insensitive(s)) && IS_LEX_DELIMIT(p[6])
+            ) {
+                ADD_TOK(TokenIdFloat, p, 6);
+                continue;
+            }
+
             TokenId id = IS_LEX_NUMBER(*p) ? TokenIdInteger : TokenIdFloat;
             bool has_dot = (id == TokenIdFloat);
             bool has_exp = false;
             const char *start = p++;
-            while (!IS_LEX_DELIMIT(*p)) {
+            while (Lex_Map[(*p)] > (LEX_SPECIAL|LEX_SPECIAL_COLON)) {
                 if (IS_LEX_NUMBER(*p) || *p == '\'') {
                     p++;
                 } else if (*p == 'e' || *p == 'E') {
@@ -443,7 +462,7 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
         }
 
         // Word
-        int len = scanSymbol(p);
+        len = scanSymbol(p);
         if (len) {
             auto id = has_apostrophe ? TokenIdLitWord : getSymbolId(p, len);
             ADD_TOK(id, p, len);

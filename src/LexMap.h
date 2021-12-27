@@ -85,10 +85,10 @@ enum LEX_CLASS_ENUM {
 **  Special Chars
 */
 enum LEX_SPECIAL_ENUM {             /* The order is important! */
-	LEX_SPECIAL_AT,                 /* 40 @ - email */
 	LEX_SPECIAL_PERCENT,            /* 25 % - file name */
-	LEX_SPECIAL_BACKSLASH,          /* 5C \  */
 	LEX_SPECIAL_COLON,              /* 3A : - time, get, set */
+	LEX_SPECIAL_AT,                 /* 40 @ - email */
+	LEX_SPECIAL_BACKSLASH,          /* 5C \  */
 	LEX_SPECIAL_TICK,               /* 27 ' - literal */
 	LEX_SPECIAL_LESSER,				/* 3C < - compare or tag */
 	LEX_SPECIAL_GREATER,			/* 3E > - compare or end tag */
@@ -180,7 +180,7 @@ enum LEX_SPECIAL_ENUM {             /* The order is important! */
 	/* 2B +   */    LEX_WORD|LEX_SPECIAL_PLUS,
 	/* 2C ,   */    LEX_SPECIAL|LEX_SPECIAL_COMMA,
 	/* 2D -   */    LEX_WORD|LEX_SPECIAL_MINUS,
-	/* 2E .   */    LEX_SPECIAL|LEX_SPECIAL_PERIOD,
+	/* 2E .   */    LEX_WORD|LEX_SPECIAL_PERIOD,
 	/* 2F /   */    LEX_SPECIAL|LEX_DELIMIT_SLASH,
 
 	/* 30 0   */    LEX_NUMBER|0,

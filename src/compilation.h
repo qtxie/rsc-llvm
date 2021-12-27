@@ -18,6 +18,8 @@
 class Compilation {
 public:
     std::string MainFile;
+    std::string CurrentPath;
+    std::vector<std::string> Paths;
     llvm::SourceMgr SrcMgr;
     TokenBuffer TokBuf;
 
@@ -25,7 +27,9 @@ public:
 
     void run();
 
+    std::string toNativePath(const char *p, int len);
     const char* readFile(const std::string &filepath);
+    Token * tokenizeFile(const std::string &filepath, Token **end_token);
 
     template <typename... Args>
     void report(const char *loc, unsigned diag_id, Args &&... args) {

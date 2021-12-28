@@ -29,7 +29,7 @@ public:
 
     std::string toNativePath(const char *p, int len);
     const char* readFile(const std::string &filepath);
-    Token * tokenizeFile(const std::string &filepath, Token **end_token);
+    Token * tokenizeFile(const std::string &filepath, Token **end_token, bool skip_header = false);
 
     template <typename... Args>
     void report(const char *loc, unsigned diag_id, Args &&... args) {

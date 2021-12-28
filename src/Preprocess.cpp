@@ -5,7 +5,7 @@
  * https://github.com/red/red/blob/master/BSD-3-License.txt
 */
 
-// This file implements all the Red/System directives.
+// This file implements the Red/System directives.
 //
 // The macro expansion algorithm is the same as the C one.
 // Tt's guaranteed to stop even if there is a recursive macro.

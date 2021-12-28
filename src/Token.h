@@ -31,7 +31,25 @@ struct Token {
     Hideset *hideset;   // For macro expansion
 
     // Helper functions
-    StringRef name() {return StringRef(loc, len);}
+    constexpr StringRef str() {return StringRef(loc, len);}
+
+    bool equals(const StringLiteral s) const {return StringRef(loc, len).equals(s);}
+
+    bool operator==(const StringLiteral s) const {
+        return 0 == StringRef(loc, len).compare_insensitive(s);
+    }
+
+    Token * operator+(std::size_t n) {
+        Token *tok = this;
+        while (n--) tok = tok->next;
+        return tok;
+    }
+
+    const Token& operator[](std::size_t idx) const {
+        const Token *tok = this;
+        while (idx--) tok = tok->next;
+        return *tok;
+    }
 };
 
 typedef uint32_t TokenIndex;

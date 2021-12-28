@@ -390,7 +390,7 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                         bool is_quoted = (*p == '"');
                         if (is_quoted) p++;
                         Token *tk_end = nullptr;
-                        tok = ctx.tokenizeFile(ctx.toNativePath(p, n), &tk_end);
+                        tok = ctx.tokenizeFile(ctx.toNativePath(p, n), &tk_end, true);
                         cur->next = tok;
                         cur = tk_end;
                         p += n;

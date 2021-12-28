@@ -75,7 +75,7 @@ const char* Compilation::readFile(const std::string &filepath) {
     return SrcMgr.getMemoryBuffer(id)->getBuffer().begin();
 }
 
-Token * Compilation::tokenizeFile(const std::string &filepath, Token **end_token) {
+Token * Compilation::tokenizeFile(const std::string &filepath, Token **end_token, bool skip_header) {
     auto parent_path = llvm::sys::path::parent_path(filepath).str();
     if (parent_path != llvm::sys::path::root_path(filepath))  // if parent_path is not X:\ 
         parent_path.push_back(OS_DIR_SEP);
@@ -85,6 +85,28 @@ Token * Compilation::tokenizeFile(const std::string &filepath, Token **end_token
 
     const char *buffer = readFile(filepath);
     Token *tok = Tokenizer(*this).tokenize(buffer, end_token);
+    Token &t = *tok;
+
+    // Check header
+    if (t.equals("Red") && t[1].equals("/") && t[2].equals("System") && t[3].id == TokenIdLBracket) {
+        tok = t + 4;
+
+        // Skip header block
+        if (skip_header) {
+            int nested = 1;
+            while (nested && tok->id != TokenIdEof) { 
+                if (tok->id == TokenIdLBracket) nested++;
+                tok = tok->next;
+                if (tok->id == TokenIdRBracket) nested--;
+            }
+            if (nested)
+                report(t[3].loc, err_expected_match, ']', '[');
+            else
+                tok = tok->next;
+        }
+    } else {
+        report(tok->loc, err_wrong_header);
+    }
 
     CurrentPath = Paths.back();
     Paths.pop_back();

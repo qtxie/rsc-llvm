@@ -17,10 +17,7 @@ enum TokenId : uint8_t {
     TokenIdCount
 };
 
-struct Hideset {
-    Hideset *next;
-    char *name;
-};
+typedef SmallVector<StringRef> Hideset;
 
 struct Token {
     TokenId id;         // Token ID
@@ -45,8 +42,8 @@ struct Token {
         return tok;
     }
 
-    const Token& operator[](std::size_t idx) const {
-        const Token *tok = this;
+    Token& operator[](std::size_t idx) {
+        Token *tok = this;
         while (idx--) tok = tok->next;
         return *tok;
     }

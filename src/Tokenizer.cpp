@@ -103,7 +103,9 @@ Token * Tokenizer::scanDirectives(const char *p) {
     if (it == directives.end() || it->first != sym) {
         return newToken(ctx.TokBuf, TokenIdIssue, p, n);
     } else {
-        return newToken(ctx.TokBuf, it->second, p, n);
+        auto tok = newToken(ctx.TokBuf, it->second, p, n);
+        tok->kind = TokenIdDirective;
+        return tok;
     }
 }
 

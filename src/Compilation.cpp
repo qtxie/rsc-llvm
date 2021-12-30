@@ -89,20 +89,21 @@ Token * Compilation::tokenizeFile(const std::string &filepath, Token **end_token
 
     // Check header
     if (t.equals("Red") && t[1].equals("/") && t[2].equals("System") && t[3].id == TokenIdLBracket) {
-        tok = t + 4;
+        tok = t + 3;
 
         // Skip header block
         if (skip_header) {
-            int nested = 1;
-            while (nested && tok->id != TokenIdEof) { 
-                if (tok->id == TokenIdLBracket) nested++;
+            uint32_t level = 0;
+            do {
+                if (tok->id == TokenIdLBracket)
+                    level++;
+                else if (tok->id == TokenIdRBracket)
+                    level--;
                 tok = tok->next;
-                if (tok->id == TokenIdRBracket) nested--;
-            }
-            if (nested)
+            } while (level && tok->id != TokenIdEof);
+
+            if (level)
                 report(t[3].loc, err_expected_match, ']', '[');
-            else
-                tok = tok->next;
         }
     } else {
         report(tok->loc, err_wrong_header);
@@ -121,12 +122,23 @@ void Compilation::run() {
     Token *end_tok = nullptr;
     Token *tok = tokenizeFile(MainFile, &end_tok);
     llvm::errs() << "Tokenize time: " << t.getTimeFromBreakpoint("tokenizer") << "ms\n";
-//     while (tok) {
-//         llvm::errs() << TokenNames[tok->id] << ":" << tok->name() << " ";
-//        tok = tok->next;
-//    }
+
+    llvm::errs() << "All the tokens: \n";
+    Token *tk = tok;
+    while (tk) {
+        llvm::errs() << TokenNames[tk->id] << ":" << tk->str() << " ";
+        tk = tk->next;
+    }
     t.insertBreakpoint("preprocess");
     tok = Preprocess(*this).preprocess(tok);
     llvm::errs() << "Preprocess time: " << t.getTimeFromBreakpoint("preprocess") << "ms\n";
+
+
+    llvm::errs() << "Preprocessed tokens: \n";
+    tk = tok;
+    while (tk) {
+        llvm::errs() << TokenNames[tk->id] << ":" << tk->str() << " ";
+        tk = tk->next;
+    }
 
 }

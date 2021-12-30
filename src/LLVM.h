@@ -22,8 +22,8 @@ namespace llvm {
     class VersionTuple;
     template<typename T> class ArrayRef;
     template<typename T> class MutableArrayRef;
-    template<typename T> class OwningArrayRef;
     template<unsigned InternalLen> class SmallString;
+    template <typename T, unsigned N> class SmallVector;
     template<typename T> class Optional;
     template <class T> class Expected;
 
@@ -43,9 +43,9 @@ namespace llvm {
 using llvm::ArrayRef;
 using llvm::MutableArrayRef;
 using llvm::Optional;
-using llvm::OwningArrayRef;
 using llvm::SaveAndRestore;
 using llvm::SmallString;
+using llvm::SmallVector;
 using llvm::StringRef;
 using llvm::StringLiteral;
 using llvm::Twine;

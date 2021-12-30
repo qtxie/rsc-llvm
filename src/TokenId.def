@@ -16,6 +16,7 @@
 
 TOK(Unknown)             // Not a token.
 TOK(Eof)                 // End of file.
+TOK(Directive)
 
 TOK(Issue)               // #abc
 TOK(Word)                // abc123
@@ -25,15 +26,14 @@ TOK(SetWord)             // abc:
 TOK(Refinement)          // /local
 TOK(SetColon)            // colon at the tail. e.g. abc:
 TOK(GetColon)            // colon at the beginning. e.g. :abc
-
-TOK(Hex)
-TOK(Byte)
-TOK(Integer)
-TOK(Float)
-TOK(String)
-TOK(MultilineString)
-TOK(File)
-TOK(Binary)
+TOK(Hex)                 // 12ABh
+TOK(Byte)                // #"a"
+TOK(Integer)             // 123
+TOK(Float)               // 1.23
+TOK(String)              // "abc"
+TOK(MultilineString)     // {abc}
+TOK(File)                // %abc.reds
+TOK(Binary)              // #{ABCD}
 
 OPERATOR(Plus,               "+")
 OPERATOR(Minus,              "-")

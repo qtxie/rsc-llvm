@@ -10,6 +10,27 @@
 
 #include "LLVM.h"
 #include "Token.h"
+#include "StringMap.h"
+
+using std::unique_ptr;
+using llvm::StringMap;
+
+typedef Buffer<Hideset, 5000> HidesetBuffer;
+typedef SmallVector<StringRef> MacroParam;
+typedef unique_ptr<MacroParam> MacroParamPtr;
+
+struct MacroArg {
+    StringRef name;
+    Token *tok;
+};
+
+struct Macro {
+    StringRef name;
+    bool is_simple;     // Simple macro or function-like
+    uint32_t body_len;
+    Token *body;
+    MacroParamPtr params;
+};
 
 class Compilation;
 
@@ -18,11 +39,40 @@ class Preprocess
 private:
     Compilation &ctx;
 
+    StringMap<Macro> macros;
+    HidesetBuffer hsBuf;
+
 public:
     Preprocess(Compilation &c) : ctx(c) {};
     Preprocess(Compilation &&) = delete;  // prevents rvalue binding
 
     Token * preprocess(Token *tok);
+
+private:
+    bool expandMacro(Token *tok, Token **rest);
+    Macro *findMacro(Token *tok);
+    Macro &addMacro(StringRef name, Token *body, uint32_t body_len, bool is_simple);
+
+    Token * addHideset(Token *body, uint32_t body_len, Hideset &hs);
+
+    Token * skip(Token *tok, TokenId id, const char name []);
+
+    MacroParamPtr parseParams(Token *tok, Token **rest);
+    void parseDefine(Token *tok, Token **rest);
+
+    uint32_t skipContainer(Token *tok, Token **rest, TokenId beg, TokenId end);
+    uint32_t skipBlock(Token *tok, Token **rest) {
+        return skipContainer(tok, rest, TokenIdLBracket, TokenIdRBracket);
+    }
+    uint32_t skipParen(Token *tok, Token **rest) {
+        return skipContainer(tok, rest, TokenIdLParen, TokenIdRParen);
+    }
+
+    Token * copyToken(Token *tok);
+    Hideset * newHideset() {return new (hsBuf.alloc()) Hideset;}
+
+    template <typename... Args>
+    void error(const Token *tok, unsigned diag_id, Args &&... args);
 };
 
 #endif /* RED_SYSTEM_PREPROCESS_H */

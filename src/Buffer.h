@@ -11,11 +11,10 @@
 #include <llvm/Support/raw_ostream.h>
 #include <vector>
 
-template <typename T>
+template <typename T, unsigned ElementsPerChunk = 200000>
 class Buffer
 {
 private:
-    const uint32_t ElementsPerChunk;
     uint32_t Count;
     std::vector<T*> Chunks;
     T *Chunk;
@@ -31,7 +30,7 @@ private:
     }
 
 public:
-    Buffer() : ElementsPerChunk(200000), Count(0) {
+    Buffer() : Count(0) {
         addChunk();
     };
 

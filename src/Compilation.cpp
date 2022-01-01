@@ -9,7 +9,8 @@
 
 #include "Compilation.h"
 #include "Tokenizer.h"
-#include "Preprocess.h"
+#include "Preprocessor.h"
+#include "Parser.h"
 #include "TimeMeasuring.h"
 #include <llvm/Support/WithColor.h>
 #include <llvm/Support/Path.h>
@@ -62,7 +63,7 @@ std::string Compilation::toNativePath(const char *p, int len) {
         return CurrentPath + s;
 }
 
-const char* Compilation::readFile(const std::string &filepath) {
+const char* Compilation::readFile(const std::string &filepath, llvm::SMLoc include_loc) {
     //llvm::errs() << "Reading file: " << filepath << "\n";
     llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> file_or_err = llvm::MemoryBuffer::getFile(filepath);
 
@@ -71,11 +72,11 @@ const char* Compilation::readFile(const std::string &filepath) {
         exit(EXIT_FAILURE);
     }
 
-    auto id = SrcMgr.AddNewSourceBuffer(std::move(*file_or_err), llvm::SMLoc());
+    auto id = SrcMgr.AddNewSourceBuffer(std::move(*file_or_err), include_loc);
     return SrcMgr.getMemoryBuffer(id)->getBuffer().begin();
 }
 
-Token * Compilation::tokenizeFile(const std::string &filepath, Token **end_token, bool skip_header) {
+Token * Compilation::tokenizeFile(const std::string &filepath, Token **end_token, bool skip_header, SMLoc include_loc) {
     auto parent_path = llvm::sys::path::parent_path(filepath).str();
     if (parent_path != llvm::sys::path::root_path(filepath))  // if parent_path is not X:\ 
         parent_path.push_back(OS_DIR_SEP);
@@ -83,7 +84,7 @@ Token * Compilation::tokenizeFile(const std::string &filepath, Token **end_token
     Paths.push_back(CurrentPath);
     CurrentPath = parent_path;
 
-    const char *buffer = readFile(filepath);
+    const char *buffer = readFile(filepath, include_loc);
     Token *tok = Tokenizer(*this).tokenize(buffer, end_token);
     Token &t = *tok;
 
@@ -130,9 +131,8 @@ void Compilation::run() {
         tk = tk->next;
     }
     t.insertBreakpoint("preprocess");
-    tok = Preprocess(*this).preprocess(tok);
-    llvm::errs() << "Preprocess time: " << t.getTimeFromBreakpoint("preprocess") << "ms\n";
-
+    tok = Preprocessor(*this).preprocess(tok);
+    llvm::errs() << "\nPreprocess time: " << t.getTimeFromBreakpoint("preprocess") << "ms\n";
 
     llvm::errs() << "Preprocessed tokens: \n";
     tk = tok;
@@ -140,5 +140,9 @@ void Compilation::run() {
         llvm::errs() << TokenNames[tk->id] << ":" << tk->str() << " ";
         tk = tk->next;
     }
+
+    t.insertBreakpoint("parse");
+    auto prog = Parser(*this).parse(tok);
+    llvm::errs() << "\nPreprocess time: " << t.getTimeFromBreakpoint("parse") << "ms\n";
 
 }

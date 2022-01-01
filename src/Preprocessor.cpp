@@ -26,16 +26,16 @@
 // standard's wording:
 // https://www.spinellis.gr/blog/20060626/cpp.algo.pdf
 
-#include "Preprocess.h"
+#include "Preprocessor.h"
 #include "Compilation.h"
 
-Token * Preprocess::copyToken(Token *tok) {
+Token * Preprocessor::copyToken(Token *tok) {
     Token *t = new (ctx.TokBuf.alloc()) Token{*tok};
     t->next = nullptr;
     return t;
 }
 
-bool Preprocess::expandMacro(Token *tok, Token **rest) {
+bool Preprocessor::expandMacro(Token *tok, Token **rest) {
     if (tok->hideset) {
         Hideset &hs = *tok->hideset;
         for (auto &name : hs) {
@@ -68,7 +68,7 @@ bool Preprocess::expandMacro(Token *tok, Token **rest) {
     return false;
 }
 
-Token * Preprocess::addHideset(Token *body, uint32_t body_len, Hideset &hs) {
+Token * Preprocessor::addHideset(Token *body, uint32_t body_len, Hideset &hs) {
     Token head = {};
     Token *cur = &head;
 
@@ -82,7 +82,7 @@ Token * Preprocess::addHideset(Token *body, uint32_t body_len, Hideset &hs) {
     return head.next;
 }
 
-Macro *Preprocess::findMacro(Token *tok) {
+Macro *Preprocessor::findMacro(Token *tok) {
     if (tok->id != TokenIdWord) return nullptr;
     if (auto it = macros.find(tok->str()); it != macros.end()){
         return &it->second;
@@ -90,7 +90,7 @@ Macro *Preprocess::findMacro(Token *tok) {
     return nullptr;
 }
 
-Macro &Preprocess::addMacro(StringRef name, Token *body, uint32_t body_len, bool is_simple) {
+Macro &Preprocessor::addMacro(StringRef name, Token *body, uint32_t body_len, bool is_simple) {
     auto&& [keyval, is_new] = macros.try_emplace(name, 
         Macro{.name = name, .is_simple = is_simple, .body_len = body_len, .body = body});
     if (!is_new)
@@ -98,14 +98,14 @@ Macro &Preprocess::addMacro(StringRef name, Token *body, uint32_t body_len, bool
     return keyval->second;
 }
 
-Token * Preprocess::skip(Token *tok, TokenId id, const char name[]) {
+Token * Preprocessor::skip(Token *tok, TokenId id, const char name[]) {
     if (tok->id != id)
         error(tok, err_expected, name);
     return tok->next;
 }
 
 // Returns the number of tokens inside the []
-uint32_t Preprocess::skipContainer(Token *tok, Token **rest, TokenId beg, TokenId end) {
+uint32_t Preprocessor::skipContainer(Token *tok, Token **rest, TokenId beg, TokenId end) {
     Token *start = tok;
     uint32_t level = 0;
     uint32_t n = 0;
@@ -123,7 +123,7 @@ uint32_t Preprocess::skipContainer(Token *tok, Token **rest, TokenId beg, TokenI
     return n;
 }
 
-MacroParamPtr Preprocess::parseParams(Token *tok, Token **rest) {
+MacroParamPtr Preprocessor::parseParams(Token *tok, Token **rest) {
     auto params = std::make_unique<MacroParam>();
 
     while (tok->id != TokenIdRParen)
@@ -139,7 +139,7 @@ MacroParamPtr Preprocess::parseParams(Token *tok, Token **rest) {
     return params;
 }
 
-void Preprocess::parseDefine(Token *tok, Token **rest) {
+void Preprocessor::parseDefine(Token *tok, Token **rest) {
     if (tok->id != TokenIdWord)
         error(tok, err_expected, "word");
     StringRef name(tok->loc, tok->len);
@@ -175,7 +175,7 @@ void Preprocess::parseDefine(Token *tok, Token **rest) {
     }
 }
 
-Token * Preprocess::preprocess(Token *tok) {
+Token * Preprocessor::preprocess(Token *tok) {
     Token head = {};
     Token *cur = &head;
 
@@ -195,7 +195,8 @@ Token * Preprocess::preprocess(Token *tok) {
                 error(file, err_expected, "filename");
 
             Token *tk_end = nullptr;
-            tok = ctx.tokenizeFile(ctx.toNativePath(file->loc, file->len), &tk_end, true);
+            tok = ctx.tokenizeFile(ctx.toNativePath(file->loc, file->len), &tk_end, 
+                                   true, SMLoc::getFromPointer(tok->loc));
             tk_end->next = file->next;
             continue;
         }
@@ -215,6 +216,6 @@ Token * Preprocess::preprocess(Token *tok) {
 }
 
 template <typename... Args>
-void Preprocess::error(const Token *tok, unsigned diag_id, Args &&... args) {
+void Preprocessor::error(const Token *tok, unsigned diag_id, Args &&... args) {
     ctx.report(tok->loc, diag_id, std::forward<Args>(args)...);
 }

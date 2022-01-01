@@ -34,7 +34,7 @@ struct Macro {
 
 class Compilation;
 
-class Preprocess
+class Preprocessor
 {
 private:
     Compilation &ctx;
@@ -43,8 +43,8 @@ private:
     HidesetBuffer hsBuf;
 
 public:
-    Preprocess(Compilation &c) : ctx(c) {};
-    Preprocess(Compilation &&) = delete;  // prevents rvalue binding
+    Preprocessor(Compilation &c) : ctx(c) {};
+    Preprocessor(Compilation &&) = delete;  // prevents rvalue binding
 
     Token * preprocess(Token *tok);
 

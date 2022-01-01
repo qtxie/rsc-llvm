@@ -15,6 +15,8 @@
 #include "Token.h"
 #include <llvm/Support/FormatVariadic.h>
 
+using llvm::SMLoc;
+
 class Compilation {
 public:
     std::string MainFile;
@@ -28,8 +30,11 @@ public:
     void run();
 
     std::string toNativePath(const char *p, int len);
-    const char* readFile(const std::string &filepath);
-    Token * tokenizeFile(const std::string &filepath, Token **end_token, bool skip_header = false);
+    const char* readFile(const std::string &filepath, SMLoc include_loc);
+    Token * tokenizeFile(const std::string &filepath, 
+                         Token **end_token, 
+                         bool skip_header = false,
+                         SMLoc include_loc = SMLoc());
 
     template <typename... Args>
     void report(const char *loc, unsigned diag_id, Args &&... args) {

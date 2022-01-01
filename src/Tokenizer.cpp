@@ -326,8 +326,10 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
             continue;
 
         case '\'':
-            has_apostrophe = true;
             p++;
+            if (!IS_LEX_WORD(*p))
+                tokenError(p, err_invalid_token);
+            has_apostrophe = true;
             break;
 
         case '~': {  // Special case: Red generates many words start with it.
@@ -335,6 +337,7 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
             while (!IS_LEX_DELIMIT(p[n])) n++;
             auto id = (p[n - 1] == ':') ? TokenIdSetWord : TokenIdWord;
             ADD_TOK(id, p, n);
+            if (id == TokenIdSetWord) cur->len--;
             }
             continue;
 
@@ -468,7 +471,21 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
         len = scanSymbol(p);
         if (len) {
             auto id = has_apostrophe ? TokenIdLitWord : getSymbolId(p, len);
-            ADD_TOK(id, p, len);
+            if (cur->id != TokenIdGetColon) {
+                ADD_TOK(id, p, len);
+            } else {
+                assert(!has_apostrophe);
+                *cur = Token{.id = TokenIdGetWord, .kind = TokenIdGetWord, .len = len, .loc = p}; 
+                p += len;
+            }
+            if (*p == ':') {
+                if (!has_apostrophe && cur->id != TokenIdGetWord) {
+                    cur->id = TokenIdSetWord;
+                    p++;
+                } else {  // 'abc: :abc:
+                    tokenError(p - 1, err_invalid_token);
+                }
+            }
             continue;
         } else if (has_apostrophe) {p--;}
 

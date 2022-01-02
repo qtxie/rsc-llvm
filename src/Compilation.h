@@ -17,15 +17,30 @@
 
 using llvm::SMLoc;
 
+enum BuildMode {
+    BuildModeDebug,
+    BuildModeRelease,    // prefer fast code than small code
+    BuildModeSmallRelease
+};
+
 class Compilation {
 public:
-    std::string MainFile;
-    std::string CurrentPath;
-    std::vector<std::string> Paths;
-    llvm::SourceMgr SrcMgr;
-    TokenBuffer TokBuf;
+    std::string mainFile;
+    std::string currentPath;
+    std::vector<std::string> paths;
+    llvm::SourceMgr srcMgr;
+    TokenBuffer tokBuf;
 
-    Compilation(std::string filepath) : MainFile(filepath) {}
+    // Configuration
+    BuildMode buildMode;
+    void *baseAddress;
+    int arch;
+    int abi;
+    std::string os;
+    std::string subSystem;
+    std::vector<StringRef> modules;
+
+    Compilation(std::string filepath) : mainFile(filepath) {}
 
     void run();
 
@@ -40,11 +55,14 @@ public:
     void report(const char *loc, unsigned diag_id, Args &&... args) {
         std::string msg = llvm::formatv(getDiagnosticText(diag_id), std::forward<Args>(args)...).str();
         llvm::SourceMgr::DiagKind kind = getDiagnosticKind(diag_id);
-        SrcMgr.PrintMessage(llvm::SMLoc::getFromPointer(loc), kind, msg);
+        srcMgr.PrintMessage(llvm::SMLoc::getFromPointer(loc), kind, msg);
         if (kind == llvm::SourceMgr::DK_Error)
             assert(false);
             //exit(EXIT_FAILURE);
     }
+private:
+    Token * checkHeader(Token *tok, bool skip_header);
+    Token * parseHeader(Token *tok);
 };
 
 #endif /* RED_SYSTEM_COMPILATION_H */

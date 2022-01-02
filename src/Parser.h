@@ -10,13 +10,32 @@
 
 #include "LLVM.h"
 #include "Token.h"
+#include "StringMap.h"
 
-struct Program {
+using llvm::StringMap;
 
+enum TypeId : uint8_t {
+    TypeInvalid,
+    TypeVoid,
+    TypeBool,
+    TypeByte,
+    TypeInt,
+    TypeFloat,
+    TypeFloat64,
+    TypeEnum,
+    TypeBinary,
+    TypePtr,
+    TypeFunc,
+    TypeArray,
+    TypeStruct,
+    TypeNull,
 };
 
 struct Type {
-
+    TypeId  id;
+    int     size;
+    int     align;
+    bool    is_unsigned;
 };
 
 // AST node type
@@ -35,7 +54,14 @@ enum NodeType : uint8_t {
 // AST Node
 struct Node {
     NodeType type;
+    bool is_alias;
+    bool is_static;     // declare
+    bool is_extern;
     Node *next;
+};
+
+struct AssignNode : Node {
+
 };
 
 struct IfNode : Node {
@@ -46,19 +72,58 @@ struct EitherNode : Node {
 
 };
 
+struct Function : Node {
+    StringRef name;
+    Node *params;
+    Node *locals;
+
+    Type *return_type;
+    Node *body;
+
+    StringRef import_lib;
+
+    bool is_inline;
+};
+
+struct Context : Node {
+    Context *parent;
+    StringMap<Node *> decls;     // global declarations in this context
+};
+
+struct Program {
+    std::vector<Node *> functions;
+    std::vector<Node *> data;
+    Node *entry;                 // entry function
+    Context *ctx;                // global context
+};
+
 class Compilation;
 
 class Parser
 {
 private:
-    Compilation &ctx;
+    typedef Buffer<unsigned char, 1024 * 1024> NodeBuffer; 
+
+    Compilation &comp;
+
+    Program *program;
+    Function *curFunc;
+
+    NodeBuffer nodeBuf;
 
 public:
-    Parser(Compilation &c) : ctx(c) {};
+    Parser(Compilation &c) : comp(c) {program = newNode<Program>();};
     Parser(Compilation &&) = delete;  // prevents rvalue binding
 
-    Program *parse(Token *tok);
+    Program *parse(const Token *tok);
 
+private:
+    void collectDeclarations(const Token *tok, Context *ctx);
+
+    template <typename T>
+    T * newNode() {
+        return new (nodeBuf.alloc(sizeof(T))) T;
+    }
 };
 
 #endif /* RED_SYSTEM_PARSER_H */

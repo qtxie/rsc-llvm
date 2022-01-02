@@ -5,8 +5,8 @@
  * https://github.com/red/red/blob/master/BSD-3-License.txt
 */
 
-#ifndef RED_SYSTEM_PREPROCESS_H
-#define RED_SYSTEM_PREPROCESS_H
+#ifndef RED_SYSTEM_PREPROCESSOR_H
+#define RED_SYSTEM_PREPROCESSOR_H
 
 #include "LLVM.h"
 #include "Token.h"
@@ -37,13 +37,13 @@ class Compilation;
 class Preprocessor
 {
 private:
-    Compilation &ctx;
+    Compilation &comp;
 
     StringMap<Macro> macros;
     HidesetBuffer hsBuf;
 
 public:
-    Preprocessor(Compilation &c) : ctx(c) {};
+    Preprocessor(Compilation &c) : comp(c) {};
     Preprocessor(Compilation &&) = delete;  // prevents rvalue binding
 
     Token * preprocess(Token *tok);
@@ -75,4 +75,4 @@ private:
     void error(const Token *tok, unsigned diag_id, Args &&... args);
 };
 
-#endif /* RED_SYSTEM_PREPROCESS_H */
+#endif /* RED_SYSTEM_PREPROCESSOR_H */

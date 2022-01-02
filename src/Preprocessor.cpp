@@ -30,7 +30,7 @@
 #include "Compilation.h"
 
 Token * Preprocessor::copyToken(Token *tok) {
-    Token *t = new (ctx.TokBuf.alloc()) Token{*tok};
+    Token *t = new (comp.tokBuf.alloc()) Token{*tok};
     t->next = nullptr;
     return t;
 }
@@ -94,7 +94,7 @@ Macro &Preprocessor::addMacro(StringRef name, Token *body, uint32_t body_len, bo
     auto&& [keyval, is_new] = macros.try_emplace(name, 
         Macro{.name = name, .is_simple = is_simple, .body_len = body_len, .body = body});
     if (!is_new)
-        ctx.report(name.data(), warn_macro_redefined);
+        comp.report(name.data(), warn_macro_redefined);
     return keyval->second;
 }
 
@@ -195,7 +195,7 @@ Token * Preprocessor::preprocess(Token *tok) {
                 error(file, err_expected, "filename");
 
             Token *tk_end = nullptr;
-            tok = ctx.tokenizeFile(ctx.toNativePath(file->loc, file->len), &tk_end, 
+            tok = comp.tokenizeFile(comp.toNativePath(file->loc, file->len), &tk_end, 
                                    true, SMLoc::getFromPointer(tok->loc));
             tk_end->next = file->next;
             continue;
@@ -217,5 +217,5 @@ Token * Preprocessor::preprocess(Token *tok) {
 
 template <typename... Args>
 void Preprocessor::error(const Token *tok, unsigned diag_id, Args &&... args) {
-    ctx.report(tok->loc, diag_id, std::forward<Args>(args)...);
+    comp.report(tok->loc, diag_id, std::forward<Args>(args)...);
 }

@@ -17,10 +17,10 @@ class Compilation;
 class Tokenizer
 {
 private:
-    Compilation &ctx;
+    Compilation &comp;
 
 public:
-    Tokenizer(Compilation &c) : ctx(c) {};
+    Tokenizer(Compilation &c) : comp(c) {};
     Tokenizer(Compilation &&) = delete;  // prevents rvalue binding
 
     Token * tokenize(const char *buffer, Token **end_token);

@@ -60,7 +60,7 @@ std::string Compilation::toNativePath(const char *p, int len) {
     if (is_absolute)
         return s;
     else
-        return CurrentPath + s;
+        return currentPath + s;
 }
 
 const char* Compilation::readFile(const std::string &filepath, llvm::SMLoc include_loc) {
@@ -72,8 +72,8 @@ const char* Compilation::readFile(const std::string &filepath, llvm::SMLoc inclu
         exit(EXIT_FAILURE);
     }
 
-    auto id = SrcMgr.AddNewSourceBuffer(std::move(*file_or_err), include_loc);
-    return SrcMgr.getMemoryBuffer(id)->getBuffer().begin();
+    auto id = srcMgr.AddNewSourceBuffer(std::move(*file_or_err), include_loc);
+    return srcMgr.getMemoryBuffer(id)->getBuffer().begin();
 }
 
 Token * Compilation::tokenizeFile(const std::string &filepath, Token **end_token, bool skip_header, SMLoc include_loc) {
@@ -81,19 +81,26 @@ Token * Compilation::tokenizeFile(const std::string &filepath, Token **end_token
     if (parent_path != llvm::sys::path::root_path(filepath))  // if parent_path is not X:\ 
         parent_path.push_back(OS_DIR_SEP);
 
-    Paths.push_back(CurrentPath);
-    CurrentPath = parent_path;
+    paths.push_back(currentPath);
+    currentPath = parent_path;
 
     const char *buffer = readFile(filepath, include_loc);
     Token *tok = Tokenizer(*this).tokenize(buffer, end_token);
+
+    tok = checkHeader(tok, skip_header);
+
+    currentPath = paths.back();
+    paths.pop_back();
+
+    return tok;
+}
+
+Token * Compilation::checkHeader(Token *tok, bool skip_header) {
     Token &t = *tok;
-
-    // Check header
     if (t.equals("Red") && t[1].equals("/") && t[2].equals("System") && t[3].id == TokenIdLBracket) {
-        tok = t + 3;
-
         // Skip header block
         if (skip_header) {
+            tok = t + 3;
             uint32_t level = 0;
             do {
                 if (tok->id == TokenIdLBracket)
@@ -109,10 +116,29 @@ Token * Compilation::tokenizeFile(const std::string &filepath, Token **end_token
     } else {
         report(tok->loc, err_wrong_header);
     }
+    return tok;
+}
 
-    CurrentPath = Paths.back();
-    Paths.pop_back();
+Token * Compilation::parseHeader(Token *tok) {
+    tok = checkHeader(tok, false);
+    for (int i = 3; i; i--) {
+        tok = tok->next;
+    }
+    assert(tok->id == TokenIdLBracket);
 
+    uint32_t level = 0;
+    do {
+        if (tok->id == TokenIdLBracket)
+            level++;
+        else if (tok->id == TokenIdRBracket)
+            level--;
+        else if (tok->id == TokenIdSetWord) {
+            // TODO key
+        } else {
+            // TODO value
+        }
+        tok = tok->next;
+    } while (level && tok->id != TokenIdEof);
     return tok;
 }
 
@@ -121,7 +147,7 @@ void Compilation::run() {
 
     t.insertBreakpoint("tokenizer");
     Token *end_tok = nullptr;
-    Token *tok = tokenizeFile(MainFile, &end_tok);
+    Token *tok = tokenizeFile(mainFile, &end_tok);
     llvm::errs() << "Tokenize time: " << t.getTimeFromBreakpoint("tokenizer") << "ms\n";
 
     llvm::errs() << "All the tokens: \n";
@@ -130,9 +156,12 @@ void Compilation::run() {
         llvm::errs() << TokenNames[tk->id] << ":" << tk->str() << " ";
         tk = tk->next;
     }
+
+    tok = parseHeader(tok);
+
     t.insertBreakpoint("preprocess");
     tok = Preprocessor(*this).preprocess(tok);
-    llvm::errs() << "\nPreprocess time: " << t.getTimeFromBreakpoint("preprocess") << "ms\n";
+    llvm::errs() << "\n\nPreprocess time: " << t.getTimeFromBreakpoint("preprocess") << "ms\n";
 
     llvm::errs() << "Preprocessed tokens: \n";
     tk = tok;
@@ -143,6 +172,6 @@ void Compilation::run() {
 
     t.insertBreakpoint("parse");
     auto prog = Parser(*this).parse(tok);
-    llvm::errs() << "\nPreprocess time: " << t.getTimeFromBreakpoint("parse") << "ms\n";
+    llvm::errs() << "\n\nParse time: " << t.getTimeFromBreakpoint("parse") << "ms\n";
 
 }

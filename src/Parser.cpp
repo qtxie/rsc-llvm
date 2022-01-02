@@ -83,6 +83,19 @@
  *
  **/
 
-Program * Parser::parse(Token *tok) {
+
+void Parser::collectDeclarations(const Token *tok, Context *ctx) {
+    while (tok) {
+        
+        tok = tok->next;
+    }
+}
+
+Program * Parser::parse(const Token *tok) {
+    Context *ctx = newNode<Context>();
+    program->ctx = ctx;
+
+    collectDeclarations(tok, ctx);
+
     return nullptr;
 }

@@ -101,9 +101,9 @@ Token * Tokenizer::scanDirectives(const char *p) {
         [](const auto &a, const auto &b) {return -1 == a.first.compare(b);});
 
     if (it == directives.end() || it->first != sym) {
-        return newToken(ctx.TokBuf, TokenIdIssue, p, n);
+        return newToken(comp.tokBuf, TokenIdIssue, p, n);
     } else {
-        auto tok = newToken(ctx.TokBuf, it->second, p, n);
+        auto tok = newToken(comp.tokBuf, it->second, p, n);
         tok->kind = TokenIdDirective;
         return tok;
     }
@@ -209,7 +209,7 @@ uint32_t Tokenizer::decodeUtf8(const char *p, const char **new_pos) {
 }
 
 #define ADD_TOK(ID, LOC, LEN) \
-    cur = cur->next = newToken(ctx.TokBuf, ID, LOC, LEN); \
+    cur = cur->next = newToken(comp.tokBuf, ID, LOC, LEN); \
     p += LEN;
 
 Token * Tokenizer::tokenize(const char *p, Token **end_token) {
@@ -395,7 +395,7 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                         bool is_quoted = (*p == '"');
                         if (is_quoted) p++;
                         Token *tk_end = nullptr;
-                        tok = ctx.tokenizeFile(ctx.toNativePath(p, n), &tk_end, 
+                        tok = comp.tokenizeFile(comp.toNativePath(p, n), &tk_end, 
                                                true, SMLoc::getFromPointer(tok->loc));
                         cur->next = tok;
                         cur = tk_end;
@@ -463,7 +463,7 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                 } else tokenError(p, err_invalid_token);
             }
             if (has_sign) start--;
-            cur = cur->next = newToken(ctx.TokBuf, id, start, p - start);
+            cur = cur->next = newToken(comp.tokBuf, id, start, p - start);
             continue;
         }
 
@@ -493,12 +493,12 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
     }
 
     *end_token = cur;
-    cur = cur->next = newToken(ctx.TokBuf, TokenIdEof, p, 0);
+    cur = cur->next = newToken(comp.tokBuf, TokenIdEof, p, 0);
     return head.next;
 }
 
 template <typename... Args>
 Token * Tokenizer::tokenError(const char *loc, unsigned diag_id, Args &&... args) {
-    ctx.report(loc, diag_id, std::forward<Args>(args)...);
-    return newToken(ctx.TokBuf, TokenIdUnknown, loc, 0);
+    comp.report(loc, diag_id, std::forward<Args>(args)...);
+    return newToken(comp.tokBuf, TokenIdUnknown, loc, 0);
 }

@@ -8,20 +8,20 @@
 #ifndef RED_SYSTEM_PARSER_H
 #define RED_SYSTEM_PARSER_H
 
-#include "LLVM.h"
-#include "Token.h"
+#include "Utils.h"
 #include "StringMap.h"
 
 using llvm::StringMap;
 
-enum TypeId : uint8_t {
-    TypeInvalid,
+// AST node type
+enum NodeId : uint8_t {
+    NodeError,
     TypeVoid,
     TypeBool,
     TypeByte,
     TypeInt,
     TypeFloat,
-    TypeFloat64,
+    TypeDouble,
     TypeEnum,
     TypeBinary,
     TypePtr,
@@ -29,35 +29,72 @@ enum TypeId : uint8_t {
     TypeArray,
     TypeStruct,
     TypeNull,
-};
-
-struct Type {
-    TypeId  id;
-    int     size;
-    int     align;
-    bool    is_unsigned;
-};
-
-// AST node type
-enum NodeType : uint8_t {
-    NodeError,
-
+    NodeAssign,
+    NodeFunc,
+    NodeFuncCall,
+    NodeVar,
+    NodeNull,
+    NodeByte,
+    NodeBool,
+    NodeInt,
+    NodeFloat,
+    NodeString,
+    NodeArray,
+    NodeStruct,
+    NodeContext,
+    NodePointer,
+    NodeEnum,
+    NodeGetAddr,        // :abc
+    NodeOpAdd,          // +
+    NodeOpSub,          // -
+    NodeOpMul,          // *
+    NodeOpDiv,          // /
+    NodeOpAnd,          // and
+    NodeOpOr,           // or
+    NodeOpXor,          // xor
+    NodeOpEq,           // =
+    NodeOpNotEq,        // <>
+    NodeOpLess,         // <
+    NodeOpGreater,      // >
+    NodeOpLessEq,       // <=
+    NodeOpGreaterEq,    // >=
+    NodeNot,
+    NodeAny,
+    NodeAll,
+    NodeReturn,
     NodeIf,
     NodeEither,
     NodeSwitch,
     NodeCase,
     NodeWhile,
     NodeUntil,
-    NodeAssign
+    NodeProgram
 };
 
 // AST Node
 struct Node {
-    NodeType type;
+    NodeId id;
     bool is_alias;
     bool is_static;     // declare
     bool is_extern;
+    bool is_signed;
+    uint16_t align;
     Node *next;
+    Token *tok;         // main token
+};
+
+typedef NodeId TypeId;
+
+struct Type : Node {
+    uint32_t  size;
+};
+
+struct VarNode: Node {
+    Type *type;
+};
+
+struct IntegerNode : Node {
+
 };
 
 struct AssignNode : Node {
@@ -73,12 +110,16 @@ struct EitherNode : Node {
 };
 
 struct Function : Node {
-    StringRef name;
-    Node *params;
-    Node *locals;
+    uint32_t n_params;
+    uint32_t n_locals;
+    Type *params;
+    Type *locals;
 
     Type *return_type;
-    Node *body;
+    uint32_t n_attrs;
+    uint32_t n_body;
+    Token *attrs;
+    Token *body;
 
     StringRef import_lib;
 
@@ -87,10 +128,11 @@ struct Function : Node {
 
 struct Context : Node {
     Context *parent;
-    StringMap<Node *> decls;     // global declarations in this context
+    StringMap<Node *> decls;     // for struct, enum, function, alias
+    StringMap<Node *> vars;      // for variables
 };
 
-struct Program {
+struct Program : Node {
     std::vector<Node *> functions;
     std::vector<Node *> data;
     Node *entry;                 // entry function
@@ -99,31 +141,44 @@ struct Program {
 
 class Compilation;
 
-class Parser
+class Parser : protected Utils
 {
 private:
     typedef Buffer<unsigned char, 1024 * 1024> NodeBuffer; 
 
-    Compilation &comp;
-
     Program *program;
     Function *curFunc;
+    Context  *curCtx;
 
     NodeBuffer nodeBuf;
 
 public:
-    Parser(Compilation &c) : comp(c) {program = newNode<Program>();};
+    Parser(Compilation &c) : Utils(c) {program = newNode<Program>(NodeProgram, nullptr);};
     Parser(Compilation &&) = delete;  // prevents rvalue binding
 
-    Program *parse(const Token *tok);
+    Program *parse(Token *tok);
 
 private:
-    void collectDeclarations(const Token *tok, Context *ctx);
+    void initTypes();
+
+    void addNode(Context *ctx, StringRef&& name, Node *node);
+    Node * findDecl(Context *ctx, StringRef name);
+    const Type & findType(StringRef&& name);
+
+    const Type & parseType(Token *tok, Token **rest);
+    Token * parseFuncSpec(Token *tok, Function *func);
+    Node * parseDecl(Token *tok, Token **rest);
+    Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = false);
 
     template <typename T>
-    T * newNode() {
-        return new (nodeBuf.alloc(sizeof(T))) T;
+    T * newNode(NodeId type, Token *main_tok) {
+        auto node = new (nodeBuf.alloc(sizeof(T))) T{type};
+        node->tok = main_tok;
+        return node;
     }
+
+    template <typename T>
+    T * newNode(const T& node) {return new (nodeBuf.alloc(sizeof(T))) T{node};}
 };
 
 #endif /* RED_SYSTEM_PARSER_H */

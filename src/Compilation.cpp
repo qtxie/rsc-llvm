@@ -111,10 +111,10 @@ Token * Compilation::checkHeader(Token *tok, bool skip_header) {
             } while (level && tok->id != TokenIdEof);
 
             if (level)
-                report(t[3].loc, err_expected_match, ']', '[');
+                error(t[3].loc, err_expected_match, ']', '[');
         }
     } else {
-        report(tok->loc, err_wrong_header);
+        error(tok->loc, err_wrong_header);
     }
     return tok;
 }

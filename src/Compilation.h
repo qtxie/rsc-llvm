@@ -52,7 +52,7 @@ public:
                          SMLoc include_loc = SMLoc());
 
     template <typename... Args>
-    void report(const char *loc, unsigned diag_id, Args &&... args) {
+    void error(const char *loc, unsigned diag_id, Args &&... args) {
         std::string msg = llvm::formatv(getDiagnosticText(diag_id), std::forward<Args>(args)...).str();
         llvm::SourceMgr::DiagKind kind = getDiagnosticKind(diag_id);
         srcMgr.PrintMessage(llvm::SMLoc::getFromPointer(loc), kind, msg);
@@ -60,7 +60,13 @@ public:
             assert(false);
             //exit(EXIT_FAILURE);
     }
-private:
+
+    template <typename... Args>
+    void error(const Token *tok, unsigned diag_id, Args &&... args) {
+        error(tok->loc, diag_id, std::forward<Args>(args)...);
+    }
+
+    // Utility functions
     Token * checkHeader(Token *tok, bool skip_header);
     Token * parseHeader(Token *tok);
 };

@@ -8,6 +8,7 @@
 #ifndef RED_SYSTEM_TOKEN_H
 #define RED_SYSTEM_TOKEN_H
 
+#include "LLVM.h"
 #include "Buffer.h"
 #include <llvm/ADT/StringRef.h>
 
@@ -21,7 +22,7 @@ typedef SmallVector<StringRef> Hideset;
 
 struct Token {
     TokenId id;         // Token ID
-    TokenId kind;       // Token Kind, e.g Keyword is a word
+    TokenId sub_id;     // e.g Multiline String
     int len;            // Token length
     const char *loc;    // Token location
     Token *next;        // Next Token

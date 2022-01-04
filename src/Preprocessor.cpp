@@ -94,33 +94,8 @@ Macro &Preprocessor::addMacro(StringRef name, Token *body, uint32_t body_len, bo
     auto&& [keyval, is_new] = macros.try_emplace(name, 
         Macro{.name = name, .is_simple = is_simple, .body_len = body_len, .body = body});
     if (!is_new)
-        comp.report(name.data(), warn_macro_redefined);
+        comp.error(name.data(), warn_macro_redefined);
     return keyval->second;
-}
-
-Token * Preprocessor::skip(Token *tok, TokenId id, const char name[]) {
-    if (tok->id != id)
-        error(tok, err_expected, name);
-    return tok->next;
-}
-
-// Returns the number of tokens inside the []
-uint32_t Preprocessor::skipContainer(Token *tok, Token **rest, TokenId beg, TokenId end) {
-    Token *start = tok;
-    uint32_t level = 0;
-    uint32_t n = 0;
-    do {
-        if (tok->id == beg)
-            level++;
-        else if (tok->id == end)
-            level--;
-        n++;
-        tok = tok->next;   
-    } while (level && tok->id != TokenIdEof);
-    if (level)
-        error(start, err_expected_match, ']', '[');
-    *rest = tok;
-    return n;
 }
 
 MacroParamPtr Preprocessor::parseParams(Token *tok, Token **rest) {
@@ -183,7 +158,7 @@ Token * Preprocessor::preprocess(Token *tok) {
         if (tok->id == TokenIdWord && expandMacro(tok, &tok))
             continue;
 
-        if (tok->kind != TokenIdDirective) {
+        if (tok->sub_id != TokenIdDirective) {
             cur = cur->next = tok;
             tok = tok->next;
             continue;
@@ -217,5 +192,5 @@ Token * Preprocessor::preprocess(Token *tok) {
 
 template <typename... Args>
 void Preprocessor::error(const Token *tok, unsigned diag_id, Args &&... args) {
-    comp.report(tok->loc, diag_id, std::forward<Args>(args)...);
+    comp.error(tok->loc, diag_id, std::forward<Args>(args)...);
 }

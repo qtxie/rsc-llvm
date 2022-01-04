@@ -13,15 +13,14 @@ DIAG(err_hex_digit_in_decimal, Error, "decimal number contains hex digit")
 
 DIAG(warn_macro_redefined, Warning, "macro in R/S is redefined")
 
+DIAG(err_dangling, Error, "dangling {0}")
 DIAG(err_expected_match, Error, "expected {0} to match this {1}")
 DIAG(err_expected, Error, "expected {0}")
 DIAG(err_expected_arg, Error, "expected {0} but found {1}")
-DIAG(err_module_identifier_not_equal, Error, "module identifier at begin and end not equal")
-DIAG(note_module_identifier_declaration, Note, "module identifier declared here")
-DIAG(err_proc_identifier_not_equal, Error, "procedure identifier at begin and end not equal")
-DIAG(note_proc_identifier_declaration, Note, "procedure identifier declared here")
+DIAG(err_invalid_func, Error, "invalid definition for function")
 
-DIAG(err_symbold_declared, Error, "symbol {0} already declared")
+
+DIAG(err_symbol_declared, Error, "symbol {0} already declared")
 DIAG(err_types_for_operator_not_compatible, Error, "types not compatible for operator {0}")
 DIAG(err_undeclared_name, Error, "undeclared name {0}")
 DIAG(err_if_expr_must_be_bool, Error, "expression of IF statement must have type BOOLEAN")

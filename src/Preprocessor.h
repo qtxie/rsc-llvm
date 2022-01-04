@@ -8,8 +8,7 @@
 #ifndef RED_SYSTEM_PREPROCESSOR_H
 #define RED_SYSTEM_PREPROCESSOR_H
 
-#include "LLVM.h"
-#include "Token.h"
+#include "Utils.h"
 #include "StringMap.h"
 
 using std::unique_ptr;
@@ -34,16 +33,14 @@ struct Macro {
 
 class Compilation;
 
-class Preprocessor
+class Preprocessor : protected Utils
 {
 private:
-    Compilation &comp;
-
     StringMap<Macro> macros;
     HidesetBuffer hsBuf;
 
 public:
-    Preprocessor(Compilation &c) : comp(c) {};
+    Preprocessor(Compilation &c) : Utils(c) {};
     Preprocessor(Compilation &&) = delete;  // prevents rvalue binding
 
     Token * preprocess(Token *tok);
@@ -55,18 +52,8 @@ private:
 
     Token * addHideset(Token *body, uint32_t body_len, Hideset &hs);
 
-    Token * skip(Token *tok, TokenId id, const char name []);
-
     MacroParamPtr parseParams(Token *tok, Token **rest);
     void parseDefine(Token *tok, Token **rest);
-
-    uint32_t skipContainer(Token *tok, Token **rest, TokenId beg, TokenId end);
-    uint32_t skipBlock(Token *tok, Token **rest) {
-        return skipContainer(tok, rest, TokenIdLBracket, TokenIdRBracket);
-    }
-    uint32_t skipParen(Token *tok, Token **rest) {
-        return skipContainer(tok, rest, TokenIdLParen, TokenIdRParen);
-    }
 
     Token * copyToken(Token *tok);
     Hideset * newHideset() {return new (hsBuf.alloc()) Hideset;}

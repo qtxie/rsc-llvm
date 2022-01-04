@@ -6,6 +6,7 @@
 */
 
 #include "Parser.h"
+#include "Compilation.h"
 
 /** Grammar
  * 
@@ -22,9 +23,9 @@
  *  func-spec-block   = "[" func-attrs-block? doc-string? param* return-spec? ("/local" local-var+)? "]"
  *  var-spec-block    = "[" type "]"
  *  func-attrs-block  = "[" "infix" | "catch" | "callback" | "custom" | "stdcall" | "cdecl" (variadic | typed)? "]"
- *  param             = (word | typed-word) doc-string?
+ *  param             = typed-word doc-string?
  *  typed-word        = word "[" type "]"
- *  local-var         = typed-word
+ *  local-var         = word+ ("[" type "]")?
  *  return-spec       = "return:" "[" type "]"
  * 
  *  declaration       = qualified-word: (function-decl | context-decl | alias-decl)
@@ -83,19 +84,209 @@
  *
  **/
 
+void Parser::addNode(Context *ctx, StringRef&& name, Node *node) {
+    auto& decls = ctx->decls;
+    auto&& [keyval, is_new] = decls.try_emplace(name, node);
+    if (!is_new)
+        comp.error(name.data(), err_symbol_declared, name);
+}
 
-void Parser::collectDeclarations(const Token *tok, Context *ctx) {
-    while (tok) {
+Node * Parser::findDecl(Context *ctx, StringRef name) {
+    auto& decls = ctx->decls;
+    auto it = decls.find(name);
+    if (it != decls.end())
+        comp.error(name.data(), err_symbol_declared, name);
+    return it->second;
+}
+
+constexpr auto genDatatypes()
+{
+    std::array<std::pair<StringRef, Type>, 6> datatypes = {{
+        {"byte!", Type{TypeByte, false, false, false, true, 1, nullptr, nullptr, 1}},
+        {"c-string!", Type{TypePtr, false, false, false, true, 4, nullptr, nullptr, 4}},
+        {"float!", Type{TypeDouble, false, false, false, true, 8, nullptr, nullptr, 8}},
+        {"float32!", Type{TypeFloat, false, false, false, true, 4, nullptr, nullptr, 4}},
+        {"integer!", Type{TypeInt, false, false, false, true, 4, nullptr, nullptr, 4}},
+        {"logic!", Type{TypeBool, false, false, false, true, 1, nullptr, nullptr, 1}},
+    }};
+    return datatypes;
+}
+
+const Type & Parser::findType(StringRef&& name) {
+    static constexpr auto basic_types = genDatatypes();
+    auto it = std::lower_bound(basic_types.begin(), basic_types.end(), name,
+        [](const auto &a, const auto &b) {return -1 == a.first.compare_insensitive(b);});
+
+    if (it == basic_types.end() || it->first != name) {
         
-        tok = tok->next;
+    } else {
+        return it->second;
     }
 }
 
-Program * Parser::parse(const Token *tok) {
-    Context *ctx = newNode<Context>();
+
+const Type & Parser::parseType(Token *tok, Token **rest) {
+    tok = skip(tok, TokenIdLBracket, '[');
+    if (tok->id != TokenIdWord)
+        comp.error(tok, err_expected, "datatype");
+    auto type = findType(StringRef(tok->loc, tok->len));
+    *rest = skip(tok->next, TokenIdRBracket, ']');
+    return type;
+}
+
+// func-spec-block = "[" func-attrs-block? doc-string? param* return-spec? ("/local" local-var+)? "]"
+Token *Parser::parseFuncSpec(Token *tok, Function *func) {
+    tok = skip(tok, TokenIdLBracket, '[');
+    if (consume(tok, TokenIdRBracket, &tok))
+        return tok;
+
+    // attribute block
+    if (tok->id == TokenIdLBracket) {
+        func->attrs = tok->next;
+        func->n_attrs = skipBlock(tok, &tok) - 2;
+        tok = tok->next;
+    }
+
+    // doc string?
+    consume(tok, TokenIdString, &tok);
+
+    // param* return-spec? ("/local" local-var+)?
+    int n = 0;
+    enum State {Param, Return, Local};
+    State state = Param;
+    while (tok->id != TokenIdRBracket) {
+        // param = word "[" type "]" doc-string?
+        if (tok->id == TokenIdWord) {
+            if (state != Param)
+                comp.error(tok, err_invalid_func);
+            auto ident = tok;
+            auto param = newNode<Type>(parseType(tok, &tok));
+            param->tok = ident;
+            consume(tok, TokenIdString, &tok);
+        }
+
+        // return-spec?
+    }
+
+    return tok;
+}
+
+// declaration = qualified-word: (function-decl | context-decl | alias-decl)
+Node * Parser::parseDecl(Token *tok, Token **rest) {
+    assert(tok->id == TokenIdSetWord);
+
+    Token *ident = tok;
+    StringRef name(tok->loc, tok->len);
+    Node *node = nullptr;
+    tok = tok->next;
+
+    // function-decl = ("func" | "function") func-spec-block body-block
+    if (tok->id == TokenIdFunc) {
+        auto func = newNode<Function>(NodeFunc, ident);
+        // func-spec-block
+        tok = parseFuncSpec(tok->next, func);
+
+        // body-block
+
+        
+    } else if (tok->id == TokenIdAlias) {
+
+    } else if (tok->id == TokenIdContext) {
+
+    }
+
+    return node;
+
+    // switch (tok->id)
+    // {
+    // case TokenIdFunc:
+    //     break;
+    // case TokenIdStruct:
+    // case TokenIdAlias:
+    // case TokenIdContext:
+    // case TokenIdInteger:
+    //     node = newNode<IntegerNode>(NodeInt, tok);
+    //     break;
+    // case TokenIdFloat:
+    // case TokenIdString:
+    // case TokenIdTrue:
+    // case TokenIdFalse:
+    // case TokenIdByte:
+    // case TokenIdBinary:
+    // case TokenIdLBracket:   // literal array
+    // case TokenIdWord:
+    // case TokenIdGetWord:
+    // default:
+    //     break;
+    // }
+
+    return node;
+}
+
+// 1. Collect function, import function, alias, context and enum
+// 2. Try to collect global variable as many as possible
+Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
+    SmallVector<Token *> bracket;
+    SmallVector<Token *> paren;
+    Token head = {};
+    Token *cur = &head;
+
+    bool skip_toks = false;
+    Node *node = nullptr;
+
+    while (tok->id != TokenIdEof) {
+        switch (tok->id)
+        {
+        case TokenIdSetWord:
+            if (node = parseDecl(tok, &tok); node)
+                addNode(ctx, StringRef(tok->loc, tok->len), node);
+            break;
+        case TokenIdWord:
+            break;    
+        case TokenIdMacroEnum:
+            break;
+        case TokenIdMacroImport:
+            break;
+        case TokenIdLBracket: 
+            bracket.push_back(tok); break;
+        case TokenIdRBracket:
+                if (bracket.empty())
+                    comp.error(tok, err_dangling, ']');
+                bracket.pop_back();
+                if (bracket.empty()) {
+                    if (paren.size()) {
+                        comp.error(paren.back(), err_expected_match, ')', '(');
+                    }
+                    if (is_block) return tok;
+                }
+                break;
+        case TokenIdLParen:
+            paren.push_back(tok); break;
+        case TokenIdRParen:
+            if (paren.empty())
+                comp.error(tok, err_dangling, ')');
+            paren.pop_back(); 
+            if (paren.empty()) {
+                if (bracket.size()) {
+                    comp.error(bracket.back(), err_expected_match, ']', '[');
+                }
+            }
+            break;
+        default:
+            break;
+        }
+        cur = cur->next = tok;
+        tok = tok->next;
+    }
+
+    return head.next;
+}
+
+Program * Parser::parse(Token *tok) {
+    Context *ctx = newNode<Context>(NodeContext, tok);
     program->ctx = ctx;
 
-    collectDeclarations(tok, ctx);
+    tok = collectDeclarations(tok, ctx);
 
     return nullptr;
 }

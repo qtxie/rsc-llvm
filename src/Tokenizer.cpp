@@ -104,7 +104,7 @@ Token * Tokenizer::scanDirectives(const char *p) {
         return newToken(comp.tokBuf, TokenIdIssue, p, n);
     } else {
         auto tok = newToken(comp.tokBuf, it->second, p, n);
-        tok->kind = TokenIdDirective;
+        tok->sub_id = TokenIdDirective;
         return tok;
     }
 }
@@ -360,7 +360,8 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
         case '{': {
             p++;
             int len = scanMultilineString(p);
-            ADD_TOK(TokenIdMultilineString, p, len);
+            ADD_TOK(TokenIdString, p, len);
+            cur->sub_id = TokenIdMultilineString;
             p++;
             }
             continue;
@@ -475,7 +476,7 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                 ADD_TOK(id, p, len);
             } else {
                 assert(!has_apostrophe);
-                *cur = Token{.id = TokenIdGetWord, .kind = TokenIdGetWord, .len = len, .loc = p}; 
+                *cur = Token{.id = TokenIdGetWord, .sub_id = TokenIdGetWord, .len = len, .loc = p}; 
                 p += len;
             }
             if (*p == ':') {
@@ -499,6 +500,6 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
 
 template <typename... Args>
 Token * Tokenizer::tokenError(const char *loc, unsigned diag_id, Args &&... args) {
-    comp.report(loc, diag_id, std::forward<Args>(args)...);
+    comp.error(loc, diag_id, std::forward<Args>(args)...);
     return newToken(comp.tokBuf, TokenIdUnknown, loc, 0);
 }

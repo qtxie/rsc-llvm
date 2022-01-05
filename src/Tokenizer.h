@@ -38,7 +38,12 @@ private:
     Token * scanDirectives(const char *p);
 
     Token * newToken(TokenBuffer &buf, TokenId id, const char *start, int len) {
-        return new (buf.alloc()) Token{id, id, len, start};
+        Token *t = buf.alloc();
+        t->id = id;
+        t->sub_id = id;
+        t->len = len;
+        t->loc = start;
+        return t;
     }
 
     template <typename... Args>

@@ -14,16 +14,19 @@ public:
     Utils(Compilation &&) = delete;  // prevents rvalue binding
 
     Token * skip(Token *tok, TokenId id, char delimiter);
+    void expect(Token *tok, TokenId id, char delimiter);
     bool consume(Token *tok, TokenId id, Token **rest);
 
     uint32_t skipContainer(Token *tok, Token **rest, TokenId beg, TokenId end);
 
     // Returns the number of tokens skipped, include []
+    // `rest` points to the tok next to the ] tok if success.
     uint32_t skipBlock(Token *tok, Token **rest) {
         return skipContainer(tok, rest, TokenIdLBracket, TokenIdRBracket);
     }
 
     // Returns the number of tokens skipped, include ()
+    // `rest` points to the tok next to the ) tok if success.
     uint32_t skipParen(Token *tok, Token **rest) {
         return skipContainer(tok, rest, TokenIdLParen, TokenIdRParen);
     }

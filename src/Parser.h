@@ -109,13 +109,19 @@ struct EitherNode : Node {
 
 };
 
+struct Context : Node {
+    Context *parent;
+    StringMap<Node *> decls;     // for struct, enum, function, alias
+    StringMap<Node *> vars;      // for variables
+};
+
 struct Function : Node {
     uint32_t n_params;
     uint32_t n_locals;
-    Type *params;
-    Type *locals;
+    Node *params;
+    Node *locals;
 
-    Type *return_type;
+    const Type *return_type;
     uint32_t n_attrs;
     uint32_t n_body;
     Token *attrs;
@@ -124,12 +130,6 @@ struct Function : Node {
     StringRef import_lib;
 
     bool is_inline;
-};
-
-struct Context : Node {
-    Context *parent;
-    StringMap<Node *> decls;     // for struct, enum, function, alias
-    StringMap<Node *> vars;      // for variables
 };
 
 struct Program : Node {
@@ -159,26 +159,25 @@ public:
     Program *parse(Token *tok);
 
 private:
-    void initTypes();
-
-    void addNode(Context *ctx, StringRef&& name, Node *node);
+    void addDecl(Context *ctx, StringRef&& name, Node *node);
     Node * findDecl(Context *ctx, StringRef name);
-    const Type & findType(StringRef&& name);
+    const Type * findType(StringRef&& name);
+    const Type * parseType(Token *tok, Token **rest);
 
-    const Type & parseType(Token *tok, Token **rest);
+    Token * parseLocal(Token *tok, Function *func);
     Token * parseFuncSpec(Token *tok, Function *func);
     Node * parseDecl(Token *tok, Token **rest);
     Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = false);
 
     template <typename T>
     T * newNode(NodeId type, Token *main_tok) {
-        auto node = new (nodeBuf.alloc(sizeof(T))) T{type};
+        T *node = (T *)nodeBuf.alloc(sizeof(T));
         node->tok = main_tok;
         return node;
     }
 
     template <typename T>
-    T * newNode(const T& node) {return new (nodeBuf.alloc(sizeof(T))) T{node};}
+    T * newNode(const T *node) {return new (nodeBuf.alloc(sizeof(T))) T{*node};}
 };
 
 #endif /* RED_SYSTEM_PARSER_H */

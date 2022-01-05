@@ -17,6 +17,7 @@
 TOK(Unknown)             // Not a token.
 TOK(Eof)                 // End of file.
 TOK(Directive)
+TOK(Keyword)
 
 TOK(Issue)               // #abc
 TOK(Word)                // abc123

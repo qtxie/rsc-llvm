@@ -7,6 +7,11 @@ Token * Utils::skip(Token *tok, TokenId id, char delimiter) {
     return tok->next;
 }
 
+void Utils::expect(Token *tok, TokenId id, char delimiter) {
+    if (tok->id != id)
+        comp.error(tok, err_expected, delimiter);
+}
+
 bool Utils::consume(Token *tok, TokenId id, Token **rest) {
     if (tok->id == id) {
         *rest = tok->next;
@@ -16,6 +21,7 @@ bool Utils::consume(Token *tok, TokenId id, Token **rest) {
     return false;
 }
 
+// `rest` points to the tok next to the end tok if success.
 uint32_t Utils::skipContainer(Token *tok, Token **rest, TokenId beg, TokenId end) {
     Token *start = tok;
     uint32_t level = 0;

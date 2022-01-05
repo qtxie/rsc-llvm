@@ -84,7 +84,7 @@
  *
  **/
 
-void Parser::addNode(Context *ctx, StringRef&& name, Node *node) {
+void Parser::addDecl(Context *ctx, StringRef&& name, Node *node) {
     auto& decls = ctx->decls;
     auto&& [keyval, is_new] = decls.try_emplace(name, node);
     if (!is_new)
@@ -112,7 +112,7 @@ constexpr auto genDatatypes()
     return datatypes;
 }
 
-const Type & Parser::findType(StringRef&& name) {
+const Type * Parser::findType(StringRef&& name) {
     static constexpr auto basic_types = genDatatypes();
     auto it = std::lower_bound(basic_types.begin(), basic_types.end(), name,
         [](const auto &a, const auto &b) {return -1 == a.first.compare_insensitive(b);});
@@ -120,18 +120,49 @@ const Type & Parser::findType(StringRef&& name) {
     if (it == basic_types.end() || it->first != name) {
         
     } else {
-        return it->second;
+        return const_cast<Type *>(&it->second);
     }
 }
 
-
-const Type & Parser::parseType(Token *tok, Token **rest) {
+const Type * Parser::parseType(Token *tok, Token **rest) {
     tok = skip(tok, TokenIdLBracket, '[');
     if (tok->id != TokenIdWord)
         comp.error(tok, err_expected, "datatype");
-    auto type = findType(StringRef(tok->loc, tok->len));
+    const Type *type = findType(StringRef(tok->loc, tok->len));
     *rest = skip(tok->next, TokenIdRBracket, ']');
     return type;
+}
+
+Token * Parser::parseLocal(Token *tok, Function *func) {
+    uint32_t n = 0;
+    uint32_t total = 0;
+    Node head{};
+    Node *cur = &head;
+    Token ident{};
+    Token *t = &ident;
+    while (tok->id != TokenIdRBracket) {
+        if (tok->id == TokenIdWord) {
+            t = t->next = tok;
+            tok = tok->next;
+            n++;
+        } else if (tok->id == TokenIdLBracket && n > 0) {
+            total += n;
+            auto name = ident.next;
+            auto type = parseType(tok, &tok);
+            while (n--) {
+                cur = cur->next = newNode<Type>(type);
+                cur->tok = name;
+                name = name->next;
+            }
+            t = &ident;
+            n = 0;
+        } else {
+            comp.error(tok, err_invalid_func);
+        }
+    }
+    func->locals = head.next;
+    func->n_locals = total;
+    return tok;
 }
 
 // func-spec-block = "[" func-attrs-block? doc-string? param* return-spec? ("/local" local-var+)? "]"
@@ -151,47 +182,68 @@ Token *Parser::parseFuncSpec(Token *tok, Function *func) {
     consume(tok, TokenIdString, &tok);
 
     // param* return-spec? ("/local" local-var+)?
-    int n = 0;
     enum State {Param, Return, Local};
     State state = Param;
+    Node params{};
+    func->params = &params;
     while (tok->id != TokenIdRBracket) {
-        // param = word "[" type "]" doc-string?
-        if (tok->id == TokenIdWord) {
-            if (state != Param)
-                comp.error(tok, err_invalid_func);
+        if (state == Param && tok->id == TokenIdWord) {
+            // param = word "[" type "]" doc-string?
             auto ident = tok;
-            auto param = newNode<Type>(parseType(tok, &tok));
+            auto param = newNode<Type>(parseType(tok->next, &tok));
             param->tok = ident;
+            func->params = func->params->next = param;
+            func->n_params++;
             consume(tok, TokenIdString, &tok);
+
+        } else if (state < Return && tok->id == TokenIdReturn && tok->next->id == TokenIdSetColon) {
+            // return-spec? = "[" type "]" doc-string?
+            state = Return;
+            func->return_type = parseType(tok->next->next, &tok);
+            consume(tok, TokenIdString, &tok);
+
+        } else if (state < Local && tok->id == TokenIdRefinement && tok->equals("local")) {
+            //local-var = word+ ("[" type "]")?
+            state = Local;
+            tok = parseLocal(tok->next->next, func);
+        } else {
+            comp.error(tok, err_invalid_func);
         }
-
-        // return-spec?
     }
+    func->params = params.next;
 
-    return tok;
+    return tok->next;
 }
 
 // declaration = qualified-word: (function-decl | context-decl | alias-decl)
 Node * Parser::parseDecl(Token *tok, Token **rest) {
     assert(tok->id == TokenIdSetWord);
 
-    Token *ident = tok;
-    StringRef name(tok->loc, tok->len);
+    *rest = tok;
+    Token *name = tok;
     Node *node = nullptr;
     tok = tok->next;
 
     // function-decl = ("func" | "function") func-spec-block body-block
     if (tok->id == TokenIdFunc) {
-        auto func = newNode<Function>(NodeFunc, ident);
+        auto func = newNode<Function>(NodeFunc, name);
         // func-spec-block
         tok = parseFuncSpec(tok->next, func);
 
         // body-block
+        expect(tok, TokenIdLBracket, '[');
+        func->body = tok->next;
+        func->n_body = skipBlock(tok, rest) - 2;    // don't count [ ]
+        return func;
+    } 
 
+    // alias-decl = "alias" type
+    if (tok->id == TokenIdAlias) {
         
-    } else if (tok->id == TokenIdAlias) {
 
-    } else if (tok->id == TokenIdContext) {
+    }
+    
+    if (tok->id == TokenIdContext) {
 
     }
 
@@ -219,8 +271,6 @@ Node * Parser::parseDecl(Token *tok, Token **rest) {
     // default:
     //     break;
     // }
-
-    return node;
 }
 
 // 1. Collect function, import function, alias, context and enum
@@ -231,48 +281,32 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
     Token head = {};
     Token *cur = &head;
 
-    bool skip_toks = false;
+    bool skip_decl = true;
+    Token *rest = nullptr;
     Node *node = nullptr;
 
     while (tok->id != TokenIdEof) {
         switch (tok->id)
         {
         case TokenIdSetWord:
-            if (node = parseDecl(tok, &tok); node)
-                addNode(ctx, StringRef(tok->loc, tok->len), node);
+            if (node = parseDecl(tok, &rest); node) {
+                addDecl(ctx, StringRef(tok->loc, tok->len), node);
+                if (!skip_decl) {                
+                    cur->next = tok;
+                    while (tok->next != rest) tok = tok->next;
+                    cur = tok;
+                }
+                tok = rest;
+                skip_decl = true;
+                continue;
+            }
             break;
-        case TokenIdWord:
-            break;    
         case TokenIdMacroEnum:
             break;
         case TokenIdMacroImport:
             break;
-        case TokenIdLBracket: 
-            bracket.push_back(tok); break;
-        case TokenIdRBracket:
-                if (bracket.empty())
-                    comp.error(tok, err_dangling, ']');
-                bracket.pop_back();
-                if (bracket.empty()) {
-                    if (paren.size()) {
-                        comp.error(paren.back(), err_expected_match, ')', '(');
-                    }
-                    if (is_block) return tok;
-                }
-                break;
-        case TokenIdLParen:
-            paren.push_back(tok); break;
-        case TokenIdRParen:
-            if (paren.empty())
-                comp.error(tok, err_dangling, ')');
-            paren.pop_back(); 
-            if (paren.empty()) {
-                if (bracket.size()) {
-                    comp.error(bracket.back(), err_expected_match, ']', '[');
-                }
-            }
-            break;
         default:
+            skip_decl = false;
             break;
         }
         cur = cur->next = tok;
@@ -287,6 +321,12 @@ Program * Parser::parse(Token *tok) {
     program->ctx = ctx;
 
     tok = collectDeclarations(tok, ctx);
+    auto tk = tok;
+    llvm::errs() << "\n\nAfter collectDeclarations\n";
+    while (tk) {
+        llvm::errs() << TokenNames[tk->id] << ":" << tk->str() << " ";
+        tk = tk->next;
+    }
 
-    return nullptr;
+    return program;
 }

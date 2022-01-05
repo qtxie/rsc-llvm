@@ -61,7 +61,7 @@ constexpr auto genKeywordsTable()
     return keywords;
 }
 
-static TokenId getSymbolId(const char *p, int len) {
+static TokenId getSymbolId(const char *p, int len, TokenId *sub_id) {
     static constexpr auto kw_table = genKeywordsTable();
 
     StringRef sym(p, len);
@@ -72,6 +72,7 @@ static TokenId getSymbolId(const char *p, int len) {
     if (it == kw_table.end() || it->first != sym) {
         return TokenIdWord;
     } else {
+        *sub_id = TokenIdKeyword;
         return it->second;
     }
 }
@@ -471,7 +472,8 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
         // Word
         len = scanSymbol(p);
         if (len) {
-            auto id = has_apostrophe ? TokenIdLitWord : getSymbolId(p, len);
+            TokenId sub_id = TokenIdWord;
+            auto id = has_apostrophe ? TokenIdLitWord : getSymbolId(p, len, &sub_id);
             if (cur->id != TokenIdGetColon) {
                 ADD_TOK(id, p, len);
             } else {
@@ -479,7 +481,8 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                 *cur = Token{.id = TokenIdGetWord, .sub_id = TokenIdGetWord, .len = len, .loc = p}; 
                 p += len;
             }
-            if (*p == ':') {
+            cur->sub_id = sub_id;
+            if (*p == ':' && sub_id != TokenIdKeyword) {
                 if (!has_apostrophe && cur->id != TokenIdGetWord) {
                     cur->id = TokenIdSetWord;
                     p++;

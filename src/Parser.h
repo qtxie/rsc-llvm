@@ -170,8 +170,9 @@ private:
     Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = false);
 
     template <typename T>
-    T * newNode(NodeId type, Token *main_tok) {
+    T * newNode(NodeId id, Token *main_tok) {
         T *node = (T *)nodeBuf.alloc(sizeof(T));
+        node->id = id;
         node->tok = main_tok;
         return node;
     }

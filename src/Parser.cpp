@@ -280,11 +280,12 @@ Node * Parser::parseDecl(Token *tok, Token **rest) {
 // 1. Collect function, import function, alias, context and enum
 // 2. Try to collect global variable as many as possible
 Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
-    SmallVector<Token *> bracket;
-    SmallVector<Token *> paren;
+    SmallVector<std::pair<Token *, uint32_t>> bracket;
+    SmallVector<std::pair<Token *, uint32_t>> paren;
     Token head = {};
     Token *cur = &head;
 
+    uint32_t level;
     bool skip_decl = true;
     Token *rest = nullptr;
     Node *node = nullptr;
@@ -295,7 +296,7 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
         case TokenIdSetWord:
             if (node = parseDecl(tok, &rest); node) {
                 addDecl(ctx, StringRef(tok->loc, tok->len), node);
-                if (!skip_decl) {                
+                if (!skip_decl || node->id == NodeContext) {                
                     cur->next = tok;
                     while (tok->next != rest) tok = tok->next;
                     cur = tok;
@@ -310,27 +311,32 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
         case TokenIdMacroImport:
             break;
         case TokenIdLBracket: 
-            bracket.push_back(tok); break;
+            bracket.push_back({tok, paren.size()}); break;
         case TokenIdRBracket:
                 if (bracket.empty())
                     comp.error(tok, err_dangling, ']');
+                level = bracket.back().second;
                 bracket.pop_back();
                 if (bracket.empty()) {
-                    if (paren.size()) {
-                        comp.error(paren.back(), err_expected_match, ')', '(');
+                    if (paren.size() != level) {
+                        comp.error(paren.back().first, err_expected_match, ')', '(');
                     }
-                    if (is_block) return tok->next;
+                    if (is_block) {
+                        cur->next = tok;
+                        return tok->next;
+                    }
                 }
                 break;
         case TokenIdLParen:
-            paren.push_back(tok); break;
+            paren.push_back({tok, bracket.size()}); break;
         case TokenIdRParen:
             if (paren.empty())
                 comp.error(tok, err_dangling, ')');
+            level = paren.back().second;
             paren.pop_back(); 
             if (paren.empty()) {
-                if (bracket.size()) {
-                    comp.error(bracket.back(), err_expected_match, ']', '[');
+                if (bracket.size() != level) {
+                    comp.error(bracket.back().first, err_expected_match, ']', '[');
                 }
             }
             break;

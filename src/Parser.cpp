@@ -240,11 +240,15 @@ Node * Parser::parseDecl(Token *tok, Token **rest) {
     // alias-decl = "alias" type
     if (tok->id == TokenIdAlias) {
         
-
     }
     
     if (tok->id == TokenIdContext) {
-
+        Context *ctx = newNode<Context>(NodeContext, tok);
+        ctx->parent = curCtx;
+        curCtx = ctx;
+        expect(tok->next, TokenIdLBracket, '[');
+        *rest = collectDeclarations(tok->next, ctx, true);
+        return ctx;
     }
 
     return node;
@@ -305,6 +309,31 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
             break;
         case TokenIdMacroImport:
             break;
+        case TokenIdLBracket: 
+            bracket.push_back(tok); break;
+        case TokenIdRBracket:
+                if (bracket.empty())
+                    comp.error(tok, err_dangling, ']');
+                bracket.pop_back();
+                if (bracket.empty()) {
+                    if (paren.size()) {
+                        comp.error(paren.back(), err_expected_match, ')', '(');
+                    }
+                    if (is_block) return tok->next;
+                }
+                break;
+        case TokenIdLParen:
+            paren.push_back(tok); break;
+        case TokenIdRParen:
+            if (paren.empty())
+                comp.error(tok, err_dangling, ')');
+            paren.pop_back(); 
+            if (paren.empty()) {
+                if (bracket.size()) {
+                    comp.error(bracket.back(), err_expected_match, ']', '[');
+                }
+            }
+            break;
         default:
             skip_decl = false;
             break;
@@ -318,7 +347,7 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
 
 Program * Parser::parse(Token *tok) {
     Context *ctx = newNode<Context>(NodeContext, tok);
-    program->ctx = ctx;
+    program->ctx = curCtx = ctx;
 
     tok = collectDeclarations(tok, ctx);
     auto tk = tok;

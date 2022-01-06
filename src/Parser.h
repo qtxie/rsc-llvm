@@ -166,6 +166,7 @@ private:
 
     Token * parseLocal(Token *tok, Function *func);
     Token * parseFuncSpec(Token *tok, Function *func);
+    Node * parseEnum(Token *tok, Token **rest);
     Node * parseDecl(Token *tok, Token **rest);
     Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = false);
 

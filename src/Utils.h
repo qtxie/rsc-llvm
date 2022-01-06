@@ -13,7 +13,9 @@ public:
     Utils(Compilation &c) : comp(c) {};
     Utils(Compilation &&) = delete;  // prevents rvalue binding
 
+    Token * skip(Token *tok, TokenId id, const char text[]);
     Token * skip(Token *tok, TokenId id, char delimiter);
+    void expect(Token *tok, TokenId id, const char text[]);
     void expect(Token *tok, TokenId id, char delimiter);
     bool consume(Token *tok, TokenId id, Token **rest);
 

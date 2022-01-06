@@ -7,9 +7,20 @@ Token * Utils::skip(Token *tok, TokenId id, char delimiter) {
     return tok->next;
 }
 
+Token * Utils::skip(Token *tok, TokenId id, const char text[]) {
+    if (tok->id != id)
+        comp.error(tok, err_expected, text);
+    return tok->next;
+}
+
 void Utils::expect(Token *tok, TokenId id, char delimiter) {
     if (tok->id != id)
         comp.error(tok, err_expected, delimiter);
+}
+
+void Utils::expect(Token *tok, TokenId id, const char text[]) {
+    if (tok->id != id)
+        comp.error(tok, err_expected, text);
 }
 
 bool Utils::consume(Token *tok, TokenId id, Token **rest) {

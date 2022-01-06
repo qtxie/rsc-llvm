@@ -16,7 +16,7 @@
  *  directive         = (syscall | import | enum)*
  *  syscall           = "#syscall" "[" word: integer func-spec-block "]"
  *  import            = "#import" "[" library-functions* "]"
- *  enum              = "#enum" word "[" word (word | word:+ integer)+ "]"
+ *  enum              = "#enum" word "[" (word | (word:+ integer))+ "]"
  *
  *  library-functions = string ("stdcall" | "cdecl") "[" (word: string spec-block)* "]"
  *  spec-block        = func-spec-block | var-spec-block
@@ -251,6 +251,10 @@ Node * Parser::parseDecl(Token *tok, Token **rest) {
         return ctx;
     }
 
+    // invalid cases
+    if (tok->id == TokenIdSlash)
+        comp.error(name, err_invalid_token);
+
     return node;
 
     // switch (tok->id)
@@ -277,8 +281,18 @@ Node * Parser::parseDecl(Token *tok, Token **rest) {
     // }
 }
 
+Node * Parser::parseEnum(Token *tok, Token **rest) {
+    // enum = "#enum" word "[" (word | (word:+ integer))+ "]"
+    tok = tok->next;
+    Type *node = newNode<Type>(NodeEnum, tok);
+    tok = skip(tok, TokenIdWord, "word");
+    tok = skip(tok, TokenIdLBracket, '[');
+    return nullptr;
+}
+
 // 1. Collect function, import function, alias, context and enum
 // 2. Try to collect global variable as many as possible
+// 3. Recognize path!
 Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
     SmallVector<std::pair<Token *, uint32_t>> bracket;
     SmallVector<std::pair<Token *, uint32_t>> paren;
@@ -288,25 +302,27 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
     uint32_t level;
     bool skip_decl = true;
     Token *rest = nullptr;
-    Node *node = nullptr;
 
     while (tok->id != TokenIdEof) {
+        Node *node = nullptr;
         switch (tok->id)
         {
-        case TokenIdSetWord:
-            if (node = parseDecl(tok, &rest); node) {
-                addDecl(ctx, StringRef(tok->loc, tok->len), node);
-                if (!skip_decl || node->id == NodeContext) {                
-                    cur->next = tok;
-                    while (tok->next != rest) tok = tok->next;
-                    cur = tok;
-                }
-                tok = rest;
-                skip_decl = true;
+        case TokenIdWord:
+            if (tok->next->id == TokenIdSlash) {    // a path
+                tok->id = TokenIdPath;
+                cur = cur->next = tok;
+                tok = tok->next->next;
                 continue;
             }
             break;
+        case TokenIdSetWord:
+            node = parseDecl(tok, &rest);
+            if (node && cur->id == TokenIdPath) {
+                comp.error(tok->next, err_cannot_declared, tok->next->str());
+            }
+            break;
         case TokenIdMacroEnum:
+            node = parseEnum(tok->next, &rest);
             break;
         case TokenIdMacroImport:
             break;
@@ -344,8 +360,19 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
             skip_decl = false;
             break;
         }
-        cur = cur->next = tok;
-        tok = tok->next;
+        if (node) {
+            addDecl(ctx, StringRef(tok->loc, tok->len), node);
+            if (!skip_decl || node->id == NodeContext) {                
+                cur->next = tok;
+                while (tok->next != rest) tok = tok->next;
+                cur = tok;
+            }
+            tok = rest;
+            skip_decl = true;
+        } else {
+            cur = cur->next = tok;
+            tok = tok->next;
+        }
     }
 
     return head.next;

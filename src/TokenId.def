@@ -15,11 +15,35 @@
 #endif
 
 TOK(Unknown)             // Not a token.
+
+// @@ Note: Keep in ascend order
+MACRO(Call,                 "call")
+MACRO(Case,                 "case")
+MACRO(Define,               "define")
+MACRO(Either,               "either")
+MACRO(Enum,                 "enum")
+MACRO(Export,               "export")
+MACRO(If,                   "if")
+MACRO(Import,               "import")
+MACRO(Include,              "include")
+MACRO(Inline,               "inline")
+MACRO(Script,               "script")
+MACRO(Switch,               "switch")
+MACRO(Syscall,              "syscall")
+MACRO(U16,                  "u16")
+MACRO(Verbose,              "verbose")
+
+DELIMITER(LBracket,          "[")
+DELIMITER(RBracket,          "]")
+DELIMITER(LParen,            "(")
+DELIMITER(RParen,            ")")
+
 TOK(Eof)                 // End of file.
 TOK(Directive)
 TOK(Keyword)
 
 TOK(Issue)               // #abc
+TOK(Path)                // a/b/c
 TOK(Word)                // abc123
 TOK(LitWord)             // 'abc
 TOK(GetWord)             // :abc
@@ -42,11 +66,6 @@ OPERATOR(Slash,              "/")     // when attach to previous symbol
 OPERATOR(Div,                "/")
 OPERATOR(Modulo,             "//")
 OPERATOR(Remainder,          "%")
-
-DELIMITER(LParen,            "(")
-DELIMITER(RParen,            ")")
-DELIMITER(LBracket,          "[")
-DELIMITER(RBracket,          "]")
 
 // @@ Note: Keep in ascend order
 KEYWORD(Star,                "*")
@@ -94,23 +113,6 @@ KEYWORD(Use,                 "use"   )
 KEYWORD(While,               "while" )
 KEYWORD(With,                "with"  )
 KEYWORD(Xor,                 "xor"   )
-
-// @@ Note: Keep in ascend order
-MACRO(Call,                 "call")
-MACRO(Case,                 "case")
-MACRO(Define,               "define")
-MACRO(Either,               "either")
-MACRO(Enum,                 "enum")
-MACRO(Export,               "export")
-MACRO(If,                   "if")
-MACRO(Import,               "import")
-MACRO(Include,              "include")
-MACRO(Inline,               "inline")
-MACRO(Script,               "script")
-MACRO(Switch,               "switch")
-MACRO(Syscall,              "syscall")
-MACRO(U16,                  "u16")
-MACRO(Verbose,              "verbose")
 
 #undef MACRO
 #undef KEYWORD

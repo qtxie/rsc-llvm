@@ -234,6 +234,7 @@ Node * Parser::parseDecl(Token *tok, Token **rest) {
         expect(tok, TokenIdLBracket, '[');
         func->body = tok->next;
         func->n_body = skipBlock(tok, rest) - 2;    // don't count [ ]
+        name->next->next = *rest;
         return func;
     } 
 
@@ -281,13 +282,56 @@ Node * Parser::parseDecl(Token *tok, Token **rest) {
     // }
 }
 
-Node * Parser::parseEnum(Token *tok, Token **rest) {
+
+
+Token * Parser::parseEnum(Token *tok, Context *ctx) {
+    assert(tok->id == TokenIdMacroEnum);
     // enum = "#enum" word "[" (word | (word:+ integer))+ "]"
+
+    Token *main_tok = tok;
     tok = tok->next;
     Type *node = newNode<Type>(NodeEnum, tok);
+    addDecl(ctx, StringRef(tok->loc, tok->len), node);
+
     tok = skip(tok, TokenIdWord, "word");
     tok = skip(tok, TokenIdLBracket, '[');
-    return nullptr;
+
+    int val = 0;
+    Node head{};
+    Node *cur = &head;
+    while (tok->id != TokenIdEof) {
+        if (tok->id == TokenIdWord && head.next == nullptr) {
+            if (tok->sub_id == TokenIdKeyword)
+                comp.error(tok, err_redefine_keyword, tok->str());
+            Type *elem = newNode<Type>(NodeEnum, tok);
+            elem->next = node;
+            elem->value = val++;
+            addDecl(ctx, tok->str(), elem);
+        } else if (tok->id == TokenIdSetWord) {
+            Type *elem = newNode<Type>(NodeEnum, tok);
+            cur = cur->next = elem;
+        } else if ((tok->id == TokenIdHex || tok->id == TokenIdInteger) && head.next) {
+            tok->str().getAsInteger(tok->id == TokenIdHex ? 16 : 10, val);
+            cur = head.next;
+            do {
+                Type *elem = (Type *)cur;
+                cur = cur->next;
+                elem->next = node;
+                elem->value = val;
+                addDecl(ctx, tok->str(), elem);
+            } while (cur);
+            head.next = nullptr;
+            cur = &head;
+        } else if (tok->id == TokenIdRBracket) {
+            tok = tok->next;
+            break;
+        } else {
+            comp.error(tok, err_invalid_enum, tok->str());
+        }
+        tok = tok->next;
+    }
+    main_tok->next = tok;
+    return tok;
 }
 
 // 1. Collect function, import function, alias, context and enum
@@ -300,11 +344,11 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
     Token *cur = &head;
 
     uint32_t level;
-    bool skip_decl = true;
+    Node *node = nullptr;
     Token *rest = nullptr;
 
     while (tok->id != TokenIdEof) {
-        Node *node = nullptr;
+        bool skip_decl = false;
         switch (tok->id)
         {
         case TokenIdWord:
@@ -317,14 +361,19 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
             break;
         case TokenIdSetWord:
             node = parseDecl(tok, &rest);
-            if (node && cur->id == TokenIdPath) {
-                comp.error(tok->next, err_cannot_declared, tok->next->str());
+            if (node) {
+                addDecl(ctx, tok->str(), node);
+                if (cur->id == TokenIdPath)
+                    comp.error(tok->next, err_cannot_declared, tok->next->str());
+                skip_decl = true;
             }
             break;
         case TokenIdMacroEnum:
-            node = parseEnum(tok->next, &rest);
+            rest = parseEnum(tok, ctx);
+            skip_decl = true;
             break;
         case TokenIdMacroImport:
+            skip_decl = true;
             break;
         case TokenIdLBracket: 
             bracket.push_back({tok, paren.size()}); break;
@@ -357,22 +406,16 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
             }
             break;
         default:
-            skip_decl = false;
             break;
-        }
-        if (node) {
-            addDecl(ctx, StringRef(tok->loc, tok->len), node);
-            if (!skip_decl || node->id == NodeContext) {                
-                cur->next = tok;
-                while (tok->next != rest) tok = tok->next;
-                cur = tok;
-            }
-            tok = rest;
-            skip_decl = true;
+        } 
+        if (skip_decl) {
+            cur->next = tok;
+            while (tok->next != rest) tok = tok->next;
+            cur = tok;
         } else {
             cur = cur->next = tok;
-            tok = tok->next;
         }
+        tok = tok->next;
     }
 
     return head.next;

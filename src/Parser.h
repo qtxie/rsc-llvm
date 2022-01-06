@@ -15,7 +15,7 @@ using llvm::StringMap;
 
 // AST node type
 enum NodeId : uint8_t {
-    NodeError,
+    NodeUndef,
     TypeVoid,
     TypeBool,
     TypeByte,
@@ -87,6 +87,7 @@ typedef NodeId TypeId;
 
 struct Type : Node {
     uint32_t  size;
+    int32_t   value;
 };
 
 struct VarNode: Node {
@@ -134,9 +135,9 @@ struct Function : Node {
 
 struct Program : Node {
     std::vector<Node *> functions;
-    std::vector<Node *> data;
-    Node *entry;                 // entry function
-    Context *ctx;                // global context
+    std::vector<Node *> data;       // global variables
+    Node *entry;                    // entry function
+    Context *ctx;                   // global context
 };
 
 class Compilation;
@@ -166,7 +167,7 @@ private:
 
     Token * parseLocal(Token *tok, Function *func);
     Token * parseFuncSpec(Token *tok, Function *func);
-    Node * parseEnum(Token *tok, Token **rest);
+    Token * parseEnum(Token *tok, Context *ctx);
     Node * parseDecl(Token *tok, Token **rest);
     Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = false);
 

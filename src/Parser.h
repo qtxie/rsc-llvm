@@ -17,6 +17,7 @@ using llvm::StringMap;
 enum NodeId : uint8_t {
     NodeUndef,
     TypeVoid,
+    TypeNull,
     TypeBool,
     TypeByte,
     TypeInt,
@@ -28,7 +29,7 @@ enum NodeId : uint8_t {
     TypeFunc,
     TypeArray,
     TypeStruct,
-    TypeNull,
+    TypeAlias,
     NodeAssign,
     NodeFunc,
     NodeFuncCall,
@@ -74,11 +75,10 @@ enum NodeId : uint8_t {
 // AST Node
 struct Node {
     NodeId id;
-    bool is_alias;
-    bool is_static;     // declare
-    bool is_extern;
     bool is_signed;
+    bool is_extern;
     uint16_t align;
+    uint32_t size;
     Node *next;
     Token *tok;         // main token
 };
@@ -86,8 +86,24 @@ struct Node {
 typedef NodeId TypeId;
 
 struct Type : Node {
-    uint32_t  size;
-    int32_t   value;
+    uint32_t  tid;     // unique id
+    union {
+        int64_t value;
+        Type *type;
+        Node *member;
+    } data;
+};
+
+// Struct member
+struct Member : Type {
+    int idx;
+    int align;
+    int offset;
+
+    // Bitfield
+    // bool is_bitfield;
+    // int bit_offset;
+    // int bit_width;
 };
 
 struct VarNode: Node {
@@ -134,10 +150,10 @@ struct Function : Node {
 };
 
 struct Program : Node {
-    std::vector<Node *> functions;
-    std::vector<Node *> data;       // global variables
-    Node *entry;                    // entry function
-    Context *ctx;                   // global context
+    Node *functions;
+    Node *data;                // global variables
+    Node *entry;               // entry function
+    Context *ctx;              // global context
 };
 
 class Compilation;
@@ -147,14 +163,15 @@ class Parser : protected Utils
 private:
     typedef Buffer<unsigned char, 1024 * 1024> NodeBuffer; 
 
-    Program *program;
-    Function *curFunc;
-    Context  *curCtx;
+    uint32_t curTypeId;
+    Node    *curFunc;
+    Node    *curGlobal;
+    Context *curCtx;
 
     NodeBuffer nodeBuf;
 
 public:
-    Parser(Compilation &c) : Utils(c) {program = newNode<Program>(NodeProgram, nullptr);};
+    Parser(Compilation &c) : Utils(c), curTypeId(1000) {};
     Parser(Compilation &&) = delete;  // prevents rvalue binding
 
     Program *parse(Token *tok);
@@ -162,14 +179,18 @@ public:
 private:
     void addDecl(Context *ctx, StringRef&& name, Node *node);
     Node * findDecl(Context *ctx, StringRef name);
-    const Type * findType(StringRef&& name);
-    const Type * parseType(Token *tok, Token **rest);
+    const Type * findType(const StringRef&& name);
+    const Type * parseType(Token *tok, Token **rest, bool is_block = true);
 
     Token * parseLocal(Token *tok, Function *func);
     Token * parseFuncSpec(Token *tok, Function *func);
     Token * parseEnum(Token *tok, Context *ctx);
+    Type * parseStruct(Token *tok, Token **rest);
     Node * parseDecl(Token *tok, Token **rest);
     Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = false);
+
+    template <typename T>
+    T * newNode() {return (T *)nodeBuf.alloc(sizeof(T));};
 
     template <typename T>
     T * newNode(NodeId id, Token *main_tok) {

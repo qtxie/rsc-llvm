@@ -68,7 +68,7 @@
  *                      func-type | pointer-type | struct-type | alias-name | enum-type-name
  *  func-type         = function! func-spec-block
  *  pointer-type      = pointer! "[" type "]"
- *  struct-type       = struct! "[" typed-word "]"
+ *  struct-type       = struct! "[" typed-word+ "]"
  * 
  *  size-enquiry      = "size?" (type | string-literal)
  * 
@@ -102,34 +102,43 @@ Node * Parser::findDecl(Context *ctx, StringRef name) {
 constexpr auto genDatatypes()
 {
     std::array<std::pair<StringRef, Type>, 6> datatypes = {{
-        {"byte!", Type{TypeByte, false, false, false, true, 1, nullptr, nullptr, 1}},
-        {"c-string!", Type{TypePtr, false, false, false, true, 4, nullptr, nullptr, 4}},
-        {"float!", Type{TypeDouble, false, false, false, true, 8, nullptr, nullptr, 8}},
-        {"float32!", Type{TypeFloat, false, false, false, true, 4, nullptr, nullptr, 4}},
-        {"integer!", Type{TypeInt, false, false, false, true, 4, nullptr, nullptr, 4}},
-        {"logic!", Type{TypeBool, false, false, false, true, 1, nullptr, nullptr, 1}},
+        {"byte!", Type{TypeByte, false, false, 1, 1, nullptr, nullptr, 3}},
+        {"c-string!", Type{TypePtr, false, false, 8, 8, nullptr, nullptr, TypePtr}},
+        {"float!", Type{TypeDouble, false, false, 8, 8, nullptr, nullptr, TypeDouble}},
+        {"float32!", Type{TypeFloat, false, false, 4, 4, nullptr, nullptr, TypeFloat}},
+        {"integer!", Type{TypeInt, true, false, 4, 4, nullptr, nullptr, TypeInt}},
+        {"logic!", Type{TypeBool, true, false, 1, 1, nullptr, nullptr, TypeBool}},
     }};
     return datatypes;
 }
 
-const Type * Parser::findType(StringRef&& name) {
+const Type * Parser::findType(const StringRef&& name) {
     static constexpr auto basic_types = genDatatypes();
     auto it = std::lower_bound(basic_types.begin(), basic_types.end(), name,
         [](const auto &a, const auto &b) {return -1 == a.first.compare_insensitive(b);});
 
     if (it == basic_types.end() || it->first != name) {
-        
+        return nullptr;
     } else {
         return const_cast<Type *>(&it->second);
     }
 }
 
-const Type * Parser::parseType(Token *tok, Token **rest) {
-    tok = skip(tok, TokenIdLBracket, '[');
+const Type * Parser::parseType(Token *tok, Token **rest, bool is_block) {
+    if (is_block) tok = skip(tok, TokenIdLBracket, '[');
     if (tok->id != TokenIdWord)
         comp.error(tok, err_expected, "datatype");
     const Type *type = findType(StringRef(tok->loc, tok->len));
-    *rest = skip(tok->next, TokenIdRBracket, ']');
+    if (!type) {
+        if (tok->equals("struct!")) {
+            type = parseStruct(tok, &tok);
+        } else if (tok->equals("function!")) {
+
+        } else if (tok->equals("pointer!")) {
+        }
+    }
+    if (is_block) tok = skip(tok->next, TokenIdRBracket, ']');
+    *rest = tok;
     return type;
 }
 
@@ -215,6 +224,38 @@ Token *Parser::parseFuncSpec(Token *tok, Function *func) {
     return tok->next;
 }
 
+Type * Parser::parseStruct(Token *tok, Token **rest) {
+    assert(tok->equals("struct!"));
+    // struct-type = struct! "[" typed-word+ "]"
+    Type *st = newNode<Type>(TypeStruct, tok);
+    tok = skip(tok->next, TokenIdLBracket, '[');
+    Node head{};
+    Node *cur = &head;
+    uint32_t idx = 0;
+    while (tok->id != TokenIdEof) {
+        // typed-word = word "[" type "]"
+        if (tok->id == TokenIdWord || tok->sub_id == TokenIdKeyword) {
+            Token *tag = tok;
+            const Type *type = parseType(tok->next, &tok);
+            Member *member = newNode<Member>();
+            *(Type *)member = *type;
+            member->tok = tag;
+            member->idx = idx++;
+            cur = cur->next = member;
+        } else if (tok->id == TokenIdRBracket) {
+            tok = tok->next;
+            break;
+        } else {
+            comp.error(tok, err_invalid_struct, tok->str());
+        }
+    }
+    if (!idx) comp.error(tok, err_invalid_struct, tok->str());  // empty struct
+    *rest = tok;
+    st->tid = curTypeId++;
+    st->data.member = head.next;
+    return st;
+}
+
 // declaration = qualified-word: (function-decl | context-decl | alias-decl)
 Node * Parser::parseDecl(Token *tok, Token **rest) {
     assert(tok->id == TokenIdSetWord);
@@ -240,7 +281,11 @@ Node * Parser::parseDecl(Token *tok, Token **rest) {
 
     // alias-decl = "alias" type
     if (tok->id == TokenIdAlias) {
-        
+        tok = tok->next;
+        expect(tok, TokenIdWord, "word");
+        node = (Node *)parseType(tok, rest, false);
+        name->next->next = *rest;
+        return node;
     }
     
     if (tok->id == TokenIdContext) {
@@ -257,32 +302,7 @@ Node * Parser::parseDecl(Token *tok, Token **rest) {
         comp.error(name, err_invalid_token);
 
     return node;
-
-    // switch (tok->id)
-    // {
-    // case TokenIdFunc:
-    //     break;
-    // case TokenIdStruct:
-    // case TokenIdAlias:
-    // case TokenIdContext:
-    // case TokenIdInteger:
-    //     node = newNode<IntegerNode>(NodeInt, tok);
-    //     break;
-    // case TokenIdFloat:
-    // case TokenIdString:
-    // case TokenIdTrue:
-    // case TokenIdFalse:
-    // case TokenIdByte:
-    // case TokenIdBinary:
-    // case TokenIdLBracket:   // literal array
-    // case TokenIdWord:
-    // case TokenIdGetWord:
-    // default:
-    //     break;
-    // }
 }
-
-
 
 Token * Parser::parseEnum(Token *tok, Context *ctx) {
     assert(tok->id == TokenIdMacroEnum);
@@ -296,7 +316,7 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
     tok = skip(tok, TokenIdWord, "word");
     tok = skip(tok, TokenIdLBracket, '[');
 
-    int val = 0;
+    int64_t val = 0;
     Node head{};
     Node *cur = &head;
     while (tok->id != TokenIdEof) {
@@ -305,7 +325,7 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
                 comp.error(tok, err_redefine_keyword, tok->str());
             Type *elem = newNode<Type>(NodeEnum, tok);
             elem->next = node;
-            elem->value = val++;
+            elem->data.value = val++;
             addDecl(ctx, tok->str(), elem);
         } else if (tok->id == TokenIdSetWord) {
             Type *elem = newNode<Type>(NodeEnum, tok);
@@ -317,7 +337,7 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
                 Type *elem = (Type *)cur;
                 cur = cur->next;
                 elem->next = node;
-                elem->value = val;
+                elem->data.value = val;
                 addDecl(ctx, tok->str(), elem);
             } while (cur);
             head.next = nullptr;
@@ -422,8 +442,13 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
 }
 
 Program * Parser::parse(Token *tok) {
+    Program *program = newNode<Program>(NodeProgram, tok);
     Context *ctx = newNode<Context>(NodeContext, tok);
     program->ctx = curCtx = ctx;
+    Node func{};
+    Node global{};
+    curFunc = &func;
+    curGlobal = &global;
 
     tok = collectDeclarations(tok, ctx);
     auto tk = tok;
@@ -433,5 +458,7 @@ Program * Parser::parse(Token *tok) {
         tk = tk->next;
     }
 
+    program->functions = func.next;
+    program->data = global.next;
     return program;
 }

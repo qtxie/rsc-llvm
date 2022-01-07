@@ -19,6 +19,7 @@ DIAG(err_expected, Error, "expected {0}")
 DIAG(err_expected_arg, Error, "expected {0} but found {1}")
 DIAG(err_invalid_func, Error, "invalid definition for function")
 
+DIAG(err_invalid_struct, Error, "invalid struct syntax: {0}")
 DIAG(err_invalid_enum, Error, "invalid enumeration syntax: {0}")
 DIAG(err_redefine_keyword, Error, "attempt to redefine a protected keyword: {0}")
 DIAG(err_cannot_declared, Error, "declaring a {0} at this level is not allowed")

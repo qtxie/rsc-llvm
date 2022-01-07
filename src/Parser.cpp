@@ -133,8 +133,13 @@ const Type * Parser::parseType(Token *tok, Token **rest, bool is_block) {
         if (tok->equals("struct!")) {
             type = parseStruct(tok, &tok);
         } else if (tok->equals("function!")) {
-
+            auto fn = newNode<Function>();
+            tok = parseFuncSpec(tok->next, fn);
+            type = fn;
         } else if (tok->equals("pointer!")) {
+            type = newPtrType(parseType(tok->next, &tok));
+        } else {
+            comp.error(tok, err_invalid_type);
         }
     }
     if (is_block) tok = skip(tok->next, TokenIdRBracket, ']');

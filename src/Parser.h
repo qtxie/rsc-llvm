@@ -89,8 +89,9 @@ struct Type : Node {
     uint32_t  tid;     // unique id
     union {
         int64_t value;
-        Type *type;
+        const Type *type;
         Node *member;
+        Token *import_lib;
     } data;
 };
 
@@ -106,33 +107,7 @@ struct Member : Type {
     // int bit_width;
 };
 
-struct VarNode: Node {
-    Type *type;
-};
-
-struct IntegerNode : Node {
-
-};
-
-struct AssignNode : Node {
-
-};
-
-struct IfNode : Node {
-
-};
-
-struct EitherNode : Node {
-
-};
-
-struct Context : Node {
-    Context *parent;
-    StringMap<Node *> decls;     // for struct, enum, function, alias
-    StringMap<Node *> vars;      // for variables
-};
-
-struct Function : Node {
+struct Function : Type {
     uint32_t n_params;
     uint32_t n_locals;
     Node *params;
@@ -144,9 +119,33 @@ struct Function : Node {
     Token *attrs;
     Token *body;
 
-    StringRef import_lib;
-
     bool is_inline;
+};
+
+struct VarNode: Node {
+    Type *type;
+};
+
+struct Integer : Node {
+
+};
+
+struct Assign : Node {
+
+};
+
+struct If : Node {
+
+};
+
+struct Either : Node {
+
+};
+
+struct Context : Node {
+    Context *parent;
+    StringMap<Node *> decls;     // for struct, enum, function, alias
+    StringMap<Node *> vars;      // for variables
 };
 
 struct Program : Node {
@@ -188,6 +187,13 @@ private:
     Type * parseStruct(Token *tok, Token **rest);
     Node * parseDecl(Token *tok, Token **rest);
     Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = false);
+
+    Type * newPtrType(const Type *basetype) {
+        Type *ptr = (Type *)nodeBuf.alloc(sizeof(Type));
+        ptr->id = TypePtr;
+        ptr->data.type = basetype;
+        return ptr;
+    }
 
     template <typename T>
     T * newNode() {return (T *)nodeBuf.alloc(sizeof(T));};

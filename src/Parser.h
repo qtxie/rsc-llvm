@@ -29,7 +29,9 @@ enum NodeId : uint8_t {
     TypeFunc,
     TypeArray,
     TypeStruct,
+    TypeStructValue,
     TypeAlias,
+    TypeType,
     NodeAssign,
     NodeFunc,
     NodeFuncCall,
@@ -176,10 +178,10 @@ public:
     Program *parse(Token *tok);
 
 private:
-    void addDecl(Context *ctx, StringRef&& name, Node *node);
-    Node * findDecl(Context *ctx, StringRef name);
-    const Type * findType(const StringRef&& name);
-    const Type * parseType(Token *tok, Token **rest, bool is_block = true);
+    void addDecl(Context *ctx, const StringRef& name, Node *node);
+    Node * findDecl(StringRef name);
+    const Type * findType(const StringRef& name);
+    const Type * parseType(Token *tok, Token **rest, bool *has_value, bool is_block = true);
 
     Token * parseLocal(Token *tok, Function *func);
     Token * parseFuncSpec(Token *tok, Function *func);
@@ -187,6 +189,13 @@ private:
     Type * parseStruct(Token *tok, Token **rest);
     Node * parseDecl(Token *tok, Token **rest);
     Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = false);
+
+    Context *newContext(Token *main_tok) {
+        Context *c = new (nodeBuf.alloc(sizeof(Context))) Context;
+        c->id = NodeContext;
+        c->tok = main_tok;
+        return c;
+    }
 
     Type * newPtrType(const Type *basetype) {
         Type *ptr = (Type *)nodeBuf.alloc(sizeof(Type));
@@ -199,7 +208,7 @@ private:
     T * newNode() {return (T *)nodeBuf.alloc(sizeof(T));};
 
     template <typename T>
-    T * newNode(NodeId id, Token *main_tok) {
+    T * newNode(NodeId id, Token *main_tok = nullptr) {
         T *node = (T *)nodeBuf.alloc(sizeof(T));
         node->id = id;
         node->tok = main_tok;

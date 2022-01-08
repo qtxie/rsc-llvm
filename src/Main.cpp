@@ -153,9 +153,9 @@ int main(int Argc, const char **Argv) {
     //InitializeAllAsmPrinters();
     //InitializeAllAsmParsers();
 
-    InitializeNativeTarget();
-    InitializeNativeTargetAsmPrinter();
-    InitializeNativeTargetAsmParser();
+    //InitializeNativeTarget();
+    //InitializeNativeTargetAsmPrinter();
+    //InitializeNativeTargetAsmParser();
 
     llvm::cl::SetVersionPrinter(&printVersion);
     llvm::cl::ParseCommandLineOptions(Argc, Argv);
@@ -166,8 +166,8 @@ int main(int Argc, const char **Argv) {
         exit(EXIT_FAILURE);
     }
 
-    llvm::TargetMachine *TM = createTargetMachine(Argv[0]);
-    if (!TM) exit(EXIT_FAILURE);
+    //llvm::TargetMachine *TM = createTargetMachine(Argv[0]);
+    //if (!TM) exit(EXIT_FAILURE);
 
     for (const auto &file : InputFiles) {
         Compilation comp{file};

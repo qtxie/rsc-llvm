@@ -68,7 +68,7 @@
  *                      func-type | pointer-type | struct-type | alias-name | enum-type-name
  *  func-type         = function! func-spec-block
  *  pointer-type      = pointer! "[" type "]"
- *  struct-type       = struct! "[" typed-word+ "]"
+ *  struct-type       = struct! "[" typed-word+ "]" "value"?
  * 
  *  size-enquiry      = "size?" (type | string-literal)
  * 
@@ -84,19 +84,24 @@
  *
  **/
 
-void Parser::addDecl(Context *ctx, StringRef&& name, Node *node) {
+void Parser::addDecl(Context *ctx, const StringRef& name, Node *node) {
     auto& decls = ctx->decls;
-    auto&& [keyval, is_new] = decls.try_emplace(name, node);
+    auto&& [keyval, is_new] = decls.insert({name, node});
     if (!is_new)
         comp.error(name.data(), err_symbol_declared, name);
 }
 
-Node * Parser::findDecl(Context *ctx, StringRef name) {
-    auto& decls = ctx->decls;
-    auto it = decls.find(name);
-    if (it != decls.end())
-        comp.error(name.data(), err_symbol_declared, name);
-    return it->second;
+Node * Parser::findDecl(StringRef name) {
+    auto ctx = curCtx;
+    do {
+        auto& decls = ctx->decls;
+        auto it = decls.find(name);
+        if (it != decls.end())
+            return it->second;
+        else
+            ctx = ctx->parent;
+    } while (ctx);
+    return nullptr;
 }
 
 constexpr auto genDatatypes()
@@ -112,37 +117,52 @@ constexpr auto genDatatypes()
     return datatypes;
 }
 
-const Type * Parser::findType(const StringRef&& name) {
+const Type * Parser::findType(const StringRef& name) {
     static constexpr auto basic_types = genDatatypes();
     auto it = std::lower_bound(basic_types.begin(), basic_types.end(), name,
         [](const auto &a, const auto &b) {return -1 == a.first.compare_insensitive(b);});
 
     if (it == basic_types.end() || it->first != name) {
-        return nullptr;
+        auto node = findDecl(name);
+        if (node && node->id < TypeType) return (Type *)node;
     } else {
         return const_cast<Type *>(&it->second);
     }
+    return nullptr;
 }
 
-const Type * Parser::parseType(Token *tok, Token **rest, bool is_block) {
+const Type * Parser::parseType(Token *tok, Token **rest, bool *has_value, bool is_block) {
     if (is_block) tok = skip(tok, TokenIdLBracket, '[');
     if (tok->id != TokenIdWord)
         comp.error(tok, err_expected, "datatype");
-    const Type *type = findType(StringRef(tok->loc, tok->len));
-    if (!type) {
+    const Type *type = findType(tok->str());
+    if (type) {
+        tok = tok->next;
+    } else {
         if (tok->equals("struct!")) {
             type = parseStruct(tok, &tok);
         } else if (tok->equals("function!")) {
-            auto fn = newNode<Function>();
+            auto fn = newNode<Function>(TypeFunc);
             tok = parseFuncSpec(tok->next, fn);
             type = fn;
         } else if (tok->equals("pointer!")) {
-            type = newPtrType(parseType(tok->next, &tok));
+            bool no_value = false;
+            type = newPtrType(parseType(tok->next, &tok, &no_value));
         } else {
             comp.error(tok, err_invalid_type);
         }
     }
-    if (is_block) tok = skip(tok->next, TokenIdRBracket, ']');
+    bool value = false;
+    if (tok->id == TokenIdWord && tok->equals("value")) {
+        value = true;
+        if (*has_value && type->id == TypeStruct) {
+            tok = tok->next;
+        } else {
+            comp.error(tok, err_invalid_type);
+        }
+    }
+    *has_value = value;
+    if (is_block) tok = skip(tok, TokenIdRBracket, ']');
     *rest = tok;
     return type;
 }
@@ -162,10 +182,12 @@ Token * Parser::parseLocal(Token *tok, Function *func) {
         } else if (tok->id == TokenIdLBracket && n > 0) {
             total += n;
             auto name = ident.next;
-            auto type = parseType(tok, &tok);
+            bool is_struct_value = true;
+            auto type = parseType(tok, &tok, &is_struct_value);
             while (n--) {
                 cur = cur->next = newNode<Type>(type);
                 cur->tok = name;
+                if (is_struct_value) cur->id = TypeStructValue;
                 name = name->next;
             }
             t = &ident;
@@ -204,7 +226,9 @@ Token *Parser::parseFuncSpec(Token *tok, Function *func) {
         if (state == Param && tok->id == TokenIdWord) {
             // param = word "[" type "]" doc-string?
             auto ident = tok;
-            auto param = newNode<Type>(parseType(tok->next, &tok));
+            bool is_struct_value = true;
+            auto param = newNode<Type>(parseType(tok->next, &tok, &is_struct_value));
+            if (is_struct_value) param->id = TypeStructValue;
             param->tok = ident;
             func->params = func->params->next = param;
             func->n_params++;
@@ -213,7 +237,13 @@ Token *Parser::parseFuncSpec(Token *tok, Function *func) {
         } else if (state < Return && tok->id == TokenIdReturn && tok->next->id == TokenIdSetColon) {
             // return-spec? = "[" type "]" doc-string?
             state = Return;
-            func->return_type = parseType(tok->next->next, &tok);
+            bool is_struct_value = true;
+            func->return_type = parseType(tok->next->next, &tok, &is_struct_value);
+            if (is_struct_value) {
+                auto type = newNode<Type>(func->return_type);
+                type->id = TypeStructValue;
+                func->return_type = type;
+            }
             consume(tok, TokenIdString, &tok);
 
         } else if (state < Local && tok->id == TokenIdRefinement && tok->equals("local")) {
@@ -241,9 +271,11 @@ Type * Parser::parseStruct(Token *tok, Token **rest) {
         // typed-word = word "[" type "]"
         if (tok->id == TokenIdWord || tok->sub_id == TokenIdKeyword) {
             Token *tag = tok;
-            const Type *type = parseType(tok->next, &tok);
+            bool is_struct_value = true;
+            const Type *type = parseType(tok->next, &tok, &is_struct_value);
             Member *member = newNode<Member>();
             *(Type *)member = *type;
+            if (is_struct_value) member->id = TypeStructValue;
             member->tok = tag;
             member->idx = idx++;
             cur = cur->next = member;
@@ -288,13 +320,14 @@ Node * Parser::parseDecl(Token *tok, Token **rest) {
     if (tok->id == TokenIdAlias) {
         tok = tok->next;
         expect(tok, TokenIdWord, "word");
-        node = (Node *)parseType(tok, rest, false);
+        bool no_value = false;
+        node = (Node *)parseType(tok, rest, &no_value, false);
         name->next->next = *rest;
         return node;
     }
-    
+
     if (tok->id == TokenIdContext) {
-        Context *ctx = newNode<Context>(NodeContext, tok);
+        Context *ctx = newContext(tok);
         ctx->parent = curCtx;
         curCtx = ctx;
         expect(tok->next, TokenIdLBracket, '[');
@@ -343,7 +376,7 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
                 cur = cur->next;
                 elem->next = node;
                 elem->data.value = val;
-                addDecl(ctx, tok->str(), elem);
+                addDecl(ctx, elem->tok->str(), elem);
             } while (cur);
             head.next = nullptr;
             cur = &head;
@@ -448,7 +481,7 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
 
 Program * Parser::parse(Token *tok) {
     Program *program = newNode<Program>(NodeProgram, tok);
-    Context *ctx = newNode<Context>(NodeContext, tok);
+    Context *ctx = newContext(tok);
     program->ctx = curCtx = ctx;
     Node func{};
     Node global{};

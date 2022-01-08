@@ -160,7 +160,8 @@ void Compilation::run() {
     tok = parseHeader(tok);
 
     t.insertBreakpoint("preprocess");
-    tok = Preprocessor(*this).preprocess(tok);
+    auto pp = Preprocessor(*this);
+    tok = pp.preprocess(tok);
     llvm::errs() << "\n\nPreprocess time: " << t.getTimeFromBreakpoint("preprocess") << "ms\n";
 
     llvm::errs() << "Preprocessed tokens: \n";
@@ -171,7 +172,8 @@ void Compilation::run() {
     }
 
     t.insertBreakpoint("parse");
-    auto prog = Parser(*this).parse(tok);
+    auto parser = Parser(*this);
+    auto prog = parser.parse(tok);
     llvm::errs() << "\n\nParse time: " << t.getTimeFromBreakpoint("parse") << "ms\n";
 
 }

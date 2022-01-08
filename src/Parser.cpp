@@ -131,7 +131,7 @@ const Type * Parser::findType(const StringRef& name) {
     return nullptr;
 }
 
-const Type * Parser::parseType(Token *tok, Token **rest, bool *has_value, bool is_block) {
+const Type * Parser::parseType(Token *tok, Token **rest, bool *has_value, bool is_block, bool is_collect) {
     if (is_block) tok = skip(tok, TokenIdLBracket, '[');
     if (tok->id != TokenIdWord)
         comp.error(tok, err_expected, "datatype");
@@ -140,14 +140,14 @@ const Type * Parser::parseType(Token *tok, Token **rest, bool *has_value, bool i
         tok = tok->next;
     } else {
         if (tok->equals("struct!")) {
-            type = parseStruct(tok, &tok);
+            type = parseStruct(tok, &tok, is_collect);
         } else if (tok->equals("function!")) {
             auto fn = newNode<Function>(TypeFunc);
-            tok = parseFuncSpec(tok->next, fn);
+            tok = parseFuncSpec(tok, fn, is_collect);
             type = fn;
         } else if (tok->equals("pointer!")) {
             bool no_value = false;
-            type = newPtrType(parseType(tok->next, &tok, &no_value));
+            type = newPtrType(parseType(tok->next, &tok, &no_value, true, is_collect));
         } else {
             comp.error(tok, err_invalid_type);
         }
@@ -202,16 +202,21 @@ Token * Parser::parseLocal(Token *tok, Function *func) {
 }
 
 // func-spec-block = "[" func-attrs-block? doc-string? param* return-spec? ("/local" local-var+)? "]"
-Token *Parser::parseFuncSpec(Token *tok, Function *func) {
+Token *Parser::parseFuncSpec(Token *tok, Function *func, bool is_collect) {
+    if (is_collect) {
+        func->spec = tok;
+        skipBlock(tok, &tok);
+        return tok;
+    }
+
     tok = skip(tok, TokenIdLBracket, '[');
     if (consume(tok, TokenIdRBracket, &tok))
         return tok;
 
     // attribute block
     if (tok->id == TokenIdLBracket) {
-        func->attrs = tok->next;
-        func->n_attrs = skipBlock(tok, &tok) - 2;
-        tok = tok->next;
+        func->attrs = tok;
+        skipBlock(tok, &tok);
     }
 
     // doc string?
@@ -259,11 +264,8 @@ Token *Parser::parseFuncSpec(Token *tok, Function *func) {
     return tok->next;
 }
 
-Type * Parser::parseStruct(Token *tok, Token **rest) {
-    assert(tok->equals("struct!"));
-    // struct-type = struct! "[" typed-word+ "]"
-    Type *st = newNode<Type>(TypeStruct, tok);
-    tok = skip(tok->next, TokenIdLBracket, '[');
+Node *Parser::parseMembers(Token *tok, Token **rest) {
+    tok = skip(tok, TokenIdLBracket, '[');
     Node head{};
     Node *cur = &head;
     uint32_t idx = 0;
@@ -287,14 +289,26 @@ Type * Parser::parseStruct(Token *tok, Token **rest) {
         }
     }
     if (!idx) comp.error(tok, err_invalid_struct, tok->str());  // empty struct
-    *rest = tok;
-    st->tid = curTypeId++;
-    st->data.member = head.next;
+    return head.next;
+}
+
+Type * Parser::parseStruct(Token *tok, Token **rest, bool is_collect) {
+    assert(tok->equals("struct!"));
+    // struct-type = struct! "[" typed-word+ "]"
+    Type *st = newNode<Type>(TypeStruct, tok);
+    if (is_collect) {
+        tok = tok->next;
+        st->id = TypeStructUnresolved;
+        st->data.tokens = tok;
+        skipBlock(tok, rest);
+        return st;
+    }
+    st->data.member = parseMembers(tok->next, rest);
     return st;
 }
 
 // declaration = qualified-word: (function-decl | context-decl | alias-decl)
-Node * Parser::parseDecl(Token *tok, Token **rest) {
+Node * Parser::collectDecl(Token *tok, Token **rest) {
     assert(tok->id == TokenIdSetWord);
 
     *rest = tok;
@@ -306,22 +320,22 @@ Node * Parser::parseDecl(Token *tok, Token **rest) {
     if (tok->id == TokenIdFunc) {
         auto func = newNode<Function>(NodeFunc, name);
         // func-spec-block
-        tok = parseFuncSpec(tok->next, func);
+        tok = parseFuncSpec(tok->next, func, true);
 
         // body-block
-        expect(tok, TokenIdLBracket, '[');
-        func->body = tok->next;
-        func->n_body = skipBlock(tok, rest) - 2;    // don't count [ ]
+        func->body = tok;
+        skipBlock(tok, rest);
         name->next->next = *rest;
         return func;
-    } 
+    }
 
     // alias-decl = "alias" type
     if (tok->id == TokenIdAlias) {
         tok = tok->next;
         expect(tok, TokenIdWord, "word");
         bool no_value = false;
-        node = (Node *)parseType(tok, rest, &no_value, false);
+        auto type = (Type *)collectType(tok, rest, &no_value, false);
+        if (!type->tid) type->tid = curTypeId++;
         name->next->next = *rest;
         return node;
     }
@@ -392,6 +406,17 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
     return tok;
 }
 
+void Parser::resolveStructs(Context *ctx) {
+    for (auto const &val : ctx->decls) {
+        Type *ty = (Type *)val.second;
+        if (ty->id == TypeStructUnresolved) {
+            Token *rest;
+            ty->data.member = parseMembers(ty->data.tokens, &rest);
+        }
+    }
+}
+
+
 // 1. Collect function, import function, alias, context and enum
 // 2. Try to collect global variable as many as possible
 // 3. Recognize path!
@@ -418,7 +443,7 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
             }
             break;
         case TokenIdSetWord:
-            node = parseDecl(tok, &rest);
+            node = collectDecl(tok, &rest);
             if (node) {
                 addDecl(ctx, tok->str(), node);
                 if (cur->id == TokenIdPath)
@@ -489,12 +514,9 @@ Program * Parser::parse(Token *tok) {
     curGlobal = &global;
 
     tok = collectDeclarations(tok, ctx);
-    auto tk = tok;
-    llvm::errs() << "\n\nAfter collectDeclarations\n";
-    while (tk) {
-        llvm::errs() << TokenNames[tk->id] << ":" << tk->str() << " ";
-        tk = tk->next;
-    }
+dumpTokens(tok, "After collectDeclarations");
+
+    resolveStructs(ctx);
 
     program->functions = func.next;
     program->data = global.next;

@@ -506,3 +506,11 @@ Token * Tokenizer::tokenError(const char *loc, unsigned diag_id, Args &&... args
     comp.error(loc, diag_id, std::forward<Args>(args)...);
     return newToken(comp.tokBuf, TokenIdUnknown, loc, 0);
 }
+
+void dumpTokens(Token *tok, const char *msg) {
+    llvm::errs() << "\n\n" << msg << "\n";
+    while (tok) {
+        llvm::errs() << TokenNames[tok->id] << ":" << tok->str() << " ";
+        tok = tok->next;
+    }
+}

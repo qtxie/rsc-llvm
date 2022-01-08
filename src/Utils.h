@@ -24,12 +24,14 @@ public:
     // Returns the number of tokens skipped, include []
     // `rest` points to the tok next to the ] tok if success.
     uint32_t skipBlock(Token *tok, Token **rest) {
+        expect(tok, TokenIdLBracket, '[');
         return skipContainer(tok, rest, TokenIdLBracket, TokenIdRBracket);
     }
 
     // Returns the number of tokens skipped, include ()
     // `rest` points to the tok next to the ) tok if success.
     uint32_t skipParen(Token *tok, Token **rest) {
+        expect(tok, TokenIdLParen, '(');
         return skipContainer(tok, rest, TokenIdLParen, TokenIdRParen);
     }
 };

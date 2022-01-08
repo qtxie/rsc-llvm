@@ -28,6 +28,7 @@ enum NodeId : uint8_t {
     TypePtr,
     TypeFunc,
     TypeArray,
+    TypeStructUnresolved,
     TypeStruct,
     TypeStructValue,
     TypeAlias,
@@ -93,6 +94,7 @@ struct Type : Node {
         int64_t value;
         const Type *type;
         Node *member;
+        Token *tokens;
         Token *import_lib;
     } data;
 };
@@ -116,10 +118,9 @@ struct Function : Type {
     Node *locals;
 
     const Type *return_type;
-    uint32_t n_attrs;
-    uint32_t n_body;
-    Token *attrs;
+    Token *spec;
     Token *body;
+    Token *attrs;
 
     bool is_inline;
 };
@@ -146,8 +147,8 @@ struct Either : Node {
 
 struct Context : Node {
     Context *parent;
-    StringMap<Node *> decls;     // for struct, enum, function, alias
-    StringMap<Node *> vars;      // for variables
+    StringMap<Node *> decls;   // for struct, enum, function, alias
+    StringMap<Node *> vars;    // for variables
 };
 
 struct Program : Node {
@@ -181,14 +182,22 @@ private:
     void addDecl(Context *ctx, const StringRef& name, Node *node);
     Node * findDecl(StringRef name);
     const Type * findType(const StringRef& name);
-    const Type * parseType(Token *tok, Token **rest, bool *has_value, bool is_block = true);
+    const Type * parseType(Token *tok, Token **rest, bool *has_value, bool is_block = true, bool is_collect = false);
 
     Token * parseLocal(Token *tok, Function *func);
-    Token * parseFuncSpec(Token *tok, Function *func);
+    Token * parseFuncSpec(Token *tok, Function *func, bool is_collect = false);
     Token * parseEnum(Token *tok, Context *ctx);
-    Type * parseStruct(Token *tok, Token **rest);
-    Node * parseDecl(Token *tok, Token **rest);
+    Node * parseMembers(Token *tok, Token **rest);
+    Type * parseStruct(Token *tok, Token **rest, bool is_collect = false);
+
+    const Type * collectType(Token *tok, Token **rest, bool *has_value, bool is_block = true) {
+        return parseType(tok, rest, has_value, is_block, true);
+    }
+    Type * collectStruct(Token *tok, Token **rest) {parseStruct(tok, rest, true);}
+    Node * collectDecl(Token *tok, Token **rest);
     Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = false);
+
+    void resolveStructs(Context *ctx);
 
     Context *newContext(Token *main_tok) {
         Context *c = new (nodeBuf.alloc(sizeof(Context))) Context;

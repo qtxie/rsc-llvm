@@ -60,4 +60,6 @@ const char * const TokenNames[] = {
     nullptr
 };
 
+void dumpTokens(Token *tok, const char *msg);
+
 #endif /* RED_SYSTEM_TOKEN_H */

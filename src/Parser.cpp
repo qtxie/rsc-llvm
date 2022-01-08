@@ -296,14 +296,14 @@ Type * Parser::parseStruct(Token *tok, Token **rest, bool is_collect) {
     assert(tok->equals("struct!"));
     // struct-type = struct! "[" typed-word+ "]"
     Type *st = newNode<Type>(TypeStruct, tok);
+    tok = tok->next;
     if (is_collect) {
-        tok = tok->next;
         st->id = TypeStructUnresolved;
         st->data.tokens = tok;
         skipBlock(tok, rest);
         return st;
     }
-    st->data.member = parseMembers(tok->next, rest);
+    st->data.member = parseMembers(tok, rest);
     return st;
 }
 
@@ -346,6 +346,7 @@ Node * Parser::collectDecl(Token *tok, Token **rest) {
         curCtx = ctx;
         expect(tok->next, TokenIdLBracket, '[');
         *rest = collectDeclarations(tok->next, ctx, true);
+        curCtx = ctx->parent;
         return ctx;
     }
 
@@ -407,15 +408,20 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
 }
 
 void Parser::resolveStructs(Context *ctx) {
+    curCtx = ctx;
     for (auto const &val : ctx->decls) {
         Type *ty = (Type *)val.second;
+        if (ty->id == TypePtr) ty = (Type *)ty->data.type;  // maybe a struct pointer
         if (ty->id == TypeStructUnresolved) {
             Token *rest;
             ty->data.member = parseMembers(ty->data.tokens, &rest);
+            ty->id = TypeStruct;
+        } else if (ty->id == NodeContext) {
+            resolveStructs((Context *)ty);
+            curCtx = ctx;
         }
     }
 }
-
 
 // 1. Collect function, import function, alias, context and enum
 // 2. Try to collect global variable as many as possible

@@ -13,6 +13,7 @@ DIAG(err_hex_digit_in_decimal, Error, "decimal number contains hex digit")
 
 DIAG(warn_macro_redefined, Warning, "macro in R/S is redefined")
 
+DIAG(err_circular_ref, Error, "cirular reference is not allowed")
 DIAG(err_dangling, Error, "dangling {0}")
 DIAG(err_expected_match, Error, "expected {0} to match this {1}")
 DIAG(err_expected, Error, "expected {0}")

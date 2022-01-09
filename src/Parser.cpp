@@ -86,7 +86,7 @@
 
 void Parser::addDecl(Context *ctx, const StringRef& name, Node *node) {
     auto& decls = ctx->decls;
-    auto&& [keyval, is_new] = decls.insert({name, node});
+    auto const & [keyval, is_new] = decls.insert({name, node});
     if (!is_new)
         comp.error(name.data(), err_symbol_declared, name);
 }
@@ -107,7 +107,7 @@ Node * Parser::findDecl(StringRef name) {
 constexpr auto genDatatypes()
 {
     std::array<std::pair<StringRef, Type>, 6> datatypes = {{
-        {"byte!", Type{TypeByte, false, false, 1, 1, nullptr, nullptr, 3}},
+        {"byte!", Type{TypeByte, false, false, 1, 1, nullptr, nullptr, TypeByte}},
         {"c-string!", Type{TypePtr, false, false, 8, 8, nullptr, nullptr, TypePtr}},
         {"float!", Type{TypeDouble, false, false, 8, 8, nullptr, nullptr, TypeDouble}},
         {"float32!", Type{TypeFloat, false, false, 4, 4, nullptr, nullptr, TypeFloat}},
@@ -131,13 +131,19 @@ const Type * Parser::findType(const StringRef& name) {
     return nullptr;
 }
 
-const Type * Parser::parseType(Token *tok, Token **rest, bool *has_value, bool is_block, bool is_collect) {
+const Type * Parser::parseType(Token *tok, Token **rest, bool is_block, bool is_collect) {
     if (is_block) tok = skip(tok, TokenIdLBracket, '[');
     if (tok->id != TokenIdWord)
         comp.error(tok, err_expected, "datatype");
     const Type *type = findType(tok->str());
     if (type) {
         tok = tok->next;
+        if (!is_collect && tok->id == TokenIdWord && tok->equals("value")) {
+            resolveStruct((Type *)type);
+            tok = tok->next;
+        } else if (!is_collect) {
+            type = (Type *)newPtrType(type);
+        }
     } else {
         if (tok->equals("struct!")) {
             type = parseStruct(tok, &tok, is_collect);
@@ -146,22 +152,11 @@ const Type * Parser::parseType(Token *tok, Token **rest, bool *has_value, bool i
             tok = parseFuncSpec(tok, fn, is_collect);
             type = fn;
         } else if (tok->equals("pointer!")) {
-            bool no_value = false;
-            type = newPtrType(parseType(tok->next, &tok, &no_value, true, is_collect));
+            type = newPtrType(parseType(tok->next, &tok, true, is_collect));
         } else {
             comp.error(tok, err_invalid_type);
         }
     }
-    bool value = false;
-    if (tok->id == TokenIdWord && tok->equals("value")) {
-        value = true;
-        if (*has_value && type->id == TypeStruct) {
-            tok = tok->next;
-        } else {
-            comp.error(tok, err_invalid_type);
-        }
-    }
-    *has_value = value;
     if (is_block) tok = skip(tok, TokenIdRBracket, ']');
     *rest = tok;
     return type;
@@ -182,12 +177,10 @@ Token * Parser::parseLocal(Token *tok, Function *func) {
         } else if (tok->id == TokenIdLBracket && n > 0) {
             total += n;
             auto name = ident.next;
-            bool is_struct_value = true;
-            auto type = parseType(tok, &tok, &is_struct_value);
+            auto type = parseType(tok, &tok);
             while (n--) {
                 cur = cur->next = newNode<Type>(type);
                 cur->tok = name;
-                if (is_struct_value) cur->id = TypeStructValue;
                 name = name->next;
             }
             t = &ident;
@@ -231,9 +224,7 @@ Token *Parser::parseFuncSpec(Token *tok, Function *func, bool is_collect) {
         if (state == Param && tok->id == TokenIdWord) {
             // param = word "[" type "]" doc-string?
             auto ident = tok;
-            bool is_struct_value = true;
-            auto param = newNode<Type>(parseType(tok->next, &tok, &is_struct_value));
-            if (is_struct_value) param->id = TypeStructValue;
+            auto param = newNode<Type>(parseType(tok->next, &tok));
             param->tok = ident;
             func->params = func->params->next = param;
             func->n_params++;
@@ -242,13 +233,7 @@ Token *Parser::parseFuncSpec(Token *tok, Function *func, bool is_collect) {
         } else if (state < Return && tok->id == TokenIdReturn && tok->next->id == TokenIdSetColon) {
             // return-spec? = "[" type "]" doc-string?
             state = Return;
-            bool is_struct_value = true;
-            func->return_type = parseType(tok->next->next, &tok, &is_struct_value);
-            if (is_struct_value) {
-                auto type = newNode<Type>(func->return_type);
-                type->id = TypeStructValue;
-                func->return_type = type;
-            }
+            func->return_type = parseType(tok->next->next, &tok);
             consume(tok, TokenIdString, &tok);
 
         } else if (state < Local && tok->id == TokenIdRefinement && tok->equals("local")) {
@@ -273,11 +258,9 @@ Node *Parser::parseMembers(Token *tok, Token **rest) {
         // typed-word = word "[" type "]"
         if (tok->id == TokenIdWord || tok->sub_id == TokenIdKeyword) {
             Token *tag = tok;
-            bool is_struct_value = true;
-            const Type *type = parseType(tok->next, &tok, &is_struct_value);
+            const Type *type = parseType(tok->next, &tok);
             Member *member = newNode<Member>();
             *(Type *)member = *type;
-            if (is_struct_value) member->id = TypeStructValue;
             member->tok = tag;
             member->idx = idx++;
             cur = cur->next = member;
@@ -294,7 +277,7 @@ Node *Parser::parseMembers(Token *tok, Token **rest) {
 
 Type * Parser::parseStruct(Token *tok, Token **rest, bool is_collect) {
     assert(tok->equals("struct!"));
-    // struct-type = struct! "[" typed-word+ "]"
+    // struct-type = struct! "[" typed-word+ "]" "value"?
     Type *st = newNode<Type>(TypeStruct, tok);
     tok = tok->next;
     if (is_collect) {
@@ -303,8 +286,15 @@ Type * Parser::parseStruct(Token *tok, Token **rest, bool is_collect) {
         skipBlock(tok, rest);
         return st;
     }
-    st->data.member = parseMembers(tok, rest);
-    return st;
+
+    skipBlock(tok, rest);
+    if ((*rest)->id == TokenIdWord && (*rest)->equals("value")) {
+        st->data.member = parseMembers(tok, &tok);
+        *rest = tok->next;  // skip token "value"
+        return st;
+    } else {
+        return newPtrType(st);
+    }
 }
 
 // declaration = qualified-word: (function-decl | context-decl | alias-decl)
@@ -313,7 +303,6 @@ Node * Parser::collectDecl(Token *tok, Token **rest) {
 
     *rest = tok;
     Token *name = tok;
-    Node *node = nullptr;
     tok = tok->next;
 
     // function-decl = ("func" | "function") func-spec-block body-block
@@ -333,11 +322,11 @@ Node * Parser::collectDecl(Token *tok, Token **rest) {
     if (tok->id == TokenIdAlias) {
         tok = tok->next;
         expect(tok, TokenIdWord, "word");
-        bool no_value = false;
-        auto type = (Type *)collectType(tok, rest, &no_value, false);
+        auto type = (Type *)collectType(tok, rest);
+        type->tok = name;
         if (!type->tid) type->tid = curTypeId++;
         name->next->next = *rest;
-        return node;
+        return type;
     }
 
     if (tok->id == TokenIdContext) {
@@ -354,7 +343,7 @@ Node * Parser::collectDecl(Token *tok, Token **rest) {
     if (tok->id == TokenIdSlash)
         comp.error(name, err_invalid_token);
 
-    return node;
+    return nullptr;
 }
 
 Token * Parser::parseEnum(Token *tok, Context *ctx) {
@@ -363,7 +352,8 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
 
     Token *main_tok = tok;
     tok = tok->next;
-    Type *node = newNode<Type>(NodeEnum, tok);
+    Type *node = newNode<Type>(TypeEnum, tok);
+    node->tid = curTypeId++;
     addDecl(ctx, StringRef(tok->loc, tok->len), node);
 
     tok = skip(tok, TokenIdWord, "word");
@@ -376,12 +366,13 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
         if (tok->id == TokenIdWord && head.next == nullptr) {
             if (tok->sub_id == TokenIdKeyword)
                 comp.error(tok, err_redefine_keyword, tok->str());
-            Type *elem = newNode<Type>(NodeEnum, tok);
+            Type *elem = newNode<Type>(TypeEnum, tok);
             elem->next = node;
+            elem->tid = node->tid;
             elem->data.value = val++;
             addDecl(ctx, tok->str(), elem);
         } else if (tok->id == TokenIdSetWord) {
-            Type *elem = newNode<Type>(NodeEnum, tok);
+            Type *elem = newNode<Type>(TypeEnum, tok);
             cur = cur->next = elem;
         } else if ((tok->id == TokenIdHex || tok->id == TokenIdInteger) && head.next) {
             tok->str().getAsInteger(tok->id == TokenIdHex ? 16 : 10, val);
@@ -390,6 +381,7 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
                 Type *elem = (Type *)cur;
                 cur = cur->next;
                 elem->next = node;
+                elem->tid = node->tid;
                 elem->data.value = val;
                 addDecl(ctx, elem->tok->str(), elem);
             } while (cur);
@@ -407,16 +399,28 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
     return tok;
 }
 
+bool Parser::resolveStruct(Type *ty) {
+    if (ty->id == TypeStructUnresolved) {
+        Token *rest;
+        if (ty->tid) {
+            if (std::find(tids.begin(), tids.end(), ty->tid) != tids.end())
+                comp.error(ty->tok, err_circular_ref);
+            tids.push_back(ty->tid);
+        }
+        ty->data.member = parseMembers(ty->data.tokens, &rest);
+        ty->id = TypeStruct;
+        if (ty->tid) tids.pop_back();
+        return true;
+    }
+    return false;
+}
+
 void Parser::resolveStructs(Context *ctx) {
     curCtx = ctx;
     for (auto const &val : ctx->decls) {
         Type *ty = (Type *)val.second;
-        if (ty->id == TypePtr) ty = (Type *)ty->data.type;  // maybe a struct pointer
-        if (ty->id == TypeStructUnresolved) {
-            Token *rest;
-            ty->data.member = parseMembers(ty->data.tokens, &rest);
-            ty->id = TypeStruct;
-        } else if (ty->id == NodeContext) {
+        llvm::errs() << ty->tok->str() << " " << (int)ty->id << " " << ty->tid << "\n";
+        if (!resolveStruct(ty) && ty->id == NodeContext) {
             resolveStructs((Context *)ty);
             curCtx = ctx;
         }

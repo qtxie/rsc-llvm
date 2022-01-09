@@ -150,30 +150,20 @@ void Compilation::run() {
     Token *tok = tokenizeFile(mainFile, &end_tok);
     llvm::errs() << "Tokenize time: " << t.getTimeFromBreakpoint("tokenizer") << "ms\n";
 
-    llvm::errs() << "All the tokens: \n";
-    Token *tk = tok;
-    while (tk) {
-        llvm::errs() << TokenNames[tk->id] << ":" << tk->str() << " ";
-        tk = tk->next;
-    }
+dumpTokens(tok, "All the tokens:");
 
     tok = parseHeader(tok);
 
     t.insertBreakpoint("preprocess");
     auto pp = Preprocessor(*this);
     tok = pp.preprocess(tok);
-    llvm::errs() << "\n\nPreprocess time: " << t.getTimeFromBreakpoint("preprocess") << "ms\n";
+    llvm::errs() << "Preprocess time: " << t.getTimeFromBreakpoint("preprocess") << "ms\n";
 
-    llvm::errs() << "Preprocessed tokens: \n";
-    tk = tok;
-    while (tk) {
-        llvm::errs() << TokenNames[tk->id] << ":" << tk->str() << " ";
-        tk = tk->next;
-    }
+dumpTokens(tok, "Preprocessed tokens:");
 
     t.insertBreakpoint("parse");
     auto parser = Parser(*this);
     auto prog = parser.parse(tok);
-    llvm::errs() << "\n\nParse time: " << t.getTimeFromBreakpoint("parse") << "ms\n";
+    llvm::errs() << "Parse time: " << t.getTimeFromBreakpoint("parse") << "ms\n";
 
 }

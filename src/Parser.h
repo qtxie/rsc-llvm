@@ -30,7 +30,6 @@ enum NodeId : uint8_t {
     TypeArray,
     TypeStructUnresolved,
     TypeStruct,
-    TypeStructValue,
     TypeAlias,
     TypeType,
     NodeAssign,
@@ -47,7 +46,6 @@ enum NodeId : uint8_t {
     NodeStruct,
     NodeContext,
     NodePointer,
-    NodeEnum,
     NodeGetAddr,        // :abc
     NodeOpAdd,          // +
     NodeOpSub,          // -
@@ -169,6 +167,7 @@ private:
     Node    *curFunc;
     Node    *curGlobal;
     Context *curCtx;
+    SmallVector<uint32_t> tids;  // detect struct circular reference
 
     NodeBuffer nodeBuf;
 
@@ -182,7 +181,7 @@ private:
     void addDecl(Context *ctx, const StringRef& name, Node *node);
     Node * findDecl(StringRef name);
     const Type * findType(const StringRef& name);
-    const Type * parseType(Token *tok, Token **rest, bool *has_value, bool is_block = true, bool is_collect = false);
+    const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
 
     Token * parseLocal(Token *tok, Function *func);
     Token * parseFuncSpec(Token *tok, Function *func, bool is_collect = false);
@@ -190,13 +189,13 @@ private:
     Node * parseMembers(Token *tok, Token **rest);
     Type * parseStruct(Token *tok, Token **rest, bool is_collect = false);
 
-    const Type * collectType(Token *tok, Token **rest, bool *has_value, bool is_block = true) {
-        return parseType(tok, rest, has_value, is_block, true);
+    const Type * collectType(Token *tok, Token **rest) {
+        return parseType(tok, rest, false, true);
     }
-    Type * collectStruct(Token *tok, Token **rest) {parseStruct(tok, rest, true);}
     Node * collectDecl(Token *tok, Token **rest);
     Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = false);
 
+    bool resolveStruct(Type *ty);
     void resolveStructs(Context *ctx);
 
     Context *newContext(Token *main_tok) {
@@ -209,6 +208,7 @@ private:
     Type * newPtrType(const Type *basetype) {
         Type *ptr = (Type *)nodeBuf.alloc(sizeof(Type));
         ptr->id = TypePtr;
+        ptr->tid = TypePtr;
         ptr->data.type = basetype;
         return ptr;
     }

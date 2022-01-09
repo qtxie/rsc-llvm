@@ -91,15 +91,17 @@ void Parser::addDecl(Context *ctx, const StringRef& name, Node *node) {
         comp.error(name.data(), err_symbol_declared, name);
 }
 
-Node * Parser::findDecl(StringRef name) {
+Node * Parser::findDecl(StringRef name, Context **ctx_out) {
     auto ctx = curCtx;
     do {
         auto& decls = ctx->decls;
         auto it = decls.find(name);
-        if (it != decls.end())
+        if (it != decls.end()) {
+            *ctx_out = ctx;
             return it->second;
-        else
+        } else {
             ctx = ctx->parent;
+        }
     } while (ctx);
     return nullptr;
 }
@@ -107,23 +109,23 @@ Node * Parser::findDecl(StringRef name) {
 constexpr auto genDatatypes()
 {
     std::array<std::pair<StringRef, Type>, 6> datatypes = {{
-        {"byte!", Type{TypeByte, false, false, 1, 1, nullptr, nullptr, TypeByte}},
-        {"c-string!", Type{TypePtr, false, false, 8, 8, nullptr, nullptr, TypePtr}},
-        {"float!", Type{TypeDouble, false, false, 8, 8, nullptr, nullptr, TypeDouble}},
-        {"float32!", Type{TypeFloat, false, false, 4, 4, nullptr, nullptr, TypeFloat}},
-        {"integer!", Type{TypeInt, true, false, 4, 4, nullptr, nullptr, TypeInt}},
-        {"logic!", Type{TypeBool, true, false, 1, 1, nullptr, nullptr, TypeBool}},
+        {"byte!", Type{TypeByte, false, 1, 1, nullptr, nullptr, TypeByte}},
+        {"c-string!", Type{TypePtr, false, 8, 8, nullptr, nullptr, TypePtr}},
+        {"float!", Type{TypeDouble, false, 8, 8, nullptr, nullptr, TypeDouble}},
+        {"float32!", Type{TypeFloat, false, 4, 4, nullptr, nullptr, TypeFloat}},
+        {"integer!", Type{TypeInt, true, 4, 4, nullptr, nullptr, TypeInt}},
+        {"logic!", Type{TypeBool, true, 1, 1, nullptr, nullptr, TypeBool}},
     }};
     return datatypes;
 }
 
-const Type * Parser::findType(const StringRef& name) {
+const Type * Parser::findType(const StringRef& name, Context **ctx) {
     static constexpr auto basic_types = genDatatypes();
     auto it = std::lower_bound(basic_types.begin(), basic_types.end(), name,
         [](const auto &a, const auto &b) {return -1 == a.first.compare_insensitive(b);});
 
     if (it == basic_types.end() || it->first != name) {
-        auto node = findDecl(name);
+        auto node = findDecl(name, ctx);
         if (node && node->id < TypeType) return (Type *)node;
     } else {
         return const_cast<Type *>(&it->second);
@@ -135,16 +137,17 @@ const Type * Parser::parseType(Token *tok, Token **rest, bool is_block, bool is_
     if (is_block) tok = skip(tok, TokenIdLBracket, '[');
     if (tok->id != TokenIdWord)
         comp.error(tok, err_expected, "datatype");
-    const Type *type = findType(tok->str());
-    if (type) {
+    Context *ctx = nullptr;
+    const Type *type = findType(tok->str(), &ctx);
+    if (type) {  // alias type
         tok = tok->next;
         if (!is_collect && tok->id == TokenIdWord && tok->equals("value")) {
-            resolveStruct((Type *)type);
+            resolveStruct((Type *)type, ctx);
             tok = tok->next;
         } else if (!is_collect) {
             type = (Type *)newPtrType(type);
         }
-    } else {
+    } else {     // anonymous type
         if (tok->equals("struct!")) {
             type = parseStruct(tok, &tok, is_collect);
         } else if (tok->equals("function!")) {
@@ -197,6 +200,7 @@ Token * Parser::parseLocal(Token *tok, Function *func) {
 // func-spec-block = "[" func-attrs-block? doc-string? param* return-spec? ("/local" local-var+)? "]"
 Token *Parser::parseFuncSpec(Token *tok, Function *func, bool is_collect) {
     if (is_collect) {
+        func->id = TypeFuncUnresolved;
         func->spec = tok;
         skipBlock(tok, &tok);
         return tok;
@@ -208,7 +212,7 @@ Token *Parser::parseFuncSpec(Token *tok, Function *func, bool is_collect) {
 
     // attribute block
     if (tok->id == TokenIdLBracket) {
-        func->attrs = tok;
+        func->attrs.token = tok;
         skipBlock(tok, &tok);
     }
 
@@ -245,6 +249,7 @@ Token *Parser::parseFuncSpec(Token *tok, Function *func, bool is_collect) {
         }
     }
     func->params = params.next;
+    func->id = TypeFuncBodyUnresolved;
 
     return tok->next;
 }
@@ -282,7 +287,7 @@ Type * Parser::parseStruct(Token *tok, Token **rest, bool is_collect) {
     tok = tok->next;
     if (is_collect) {
         st->id = TypeStructUnresolved;
-        st->data.tokens = tok;
+        st->data.st_body = tok;
         skipBlock(tok, rest);
         return st;
     }
@@ -307,12 +312,12 @@ Node * Parser::collectDecl(Token *tok, Token **rest) {
 
     // function-decl = ("func" | "function") func-spec-block body-block
     if (tok->id == TokenIdFunc) {
-        auto func = newNode<Function>(NodeFunc, name);
+        auto func = newNode<Function>(TypeFunc, name);
         // func-spec-block
         tok = parseFuncSpec(tok->next, func, true);
 
         // body-block
-        func->body = tok;
+        func->body.token = tok;
         skipBlock(tok, rest);
         name->next->next = *rest;
         return func;
@@ -399,33 +404,82 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
     return tok;
 }
 
-bool Parser::resolveStruct(Type *ty) {
+bool Parser::resolveStruct(Type *ty, Context *ctx) {
     if (ty->id == TypeStructUnresolved) {
+        auto savedCtx = curCtx;
+        curCtx = ctx;
         Token *rest;
         if (ty->tid) {
             if (std::find(tids.begin(), tids.end(), ty->tid) != tids.end())
                 comp.error(ty->tok, err_circular_ref);
             tids.push_back(ty->tid);
         }
-        ty->data.member = parseMembers(ty->data.tokens, &rest);
+        ty->data.member = parseMembers(ty->data.st_body, &rest);
         ty->id = TypeStruct;
         if (ty->tid) tids.pop_back();
+        curCtx = savedCtx;
         return true;
     }
     return false;
 }
 
-void Parser::resolveStructs(Context *ctx) {
+void Parser::resolveDecls(Context *ctx) {
     curCtx = ctx;
     for (auto const &val : ctx->decls) {
         Type *ty = (Type *)val.second;
-        llvm::errs() << ty->tok->str() << " " << (int)ty->id << " " << ty->tid << "\n";
-        if (!resolveStruct(ty) && ty->id == NodeContext) {
-            resolveStructs((Context *)ty);
+        //llvm::errs() << ty->tok->str() << "\n";
+        if (!resolveStruct(ty, ctx) && ty->id == NodeContext) {
+            resolveDecls((Context *)ty);
             curCtx = ctx;
+        } else if (ty->id == TypeFuncUnresolved) {
+            Function *fn = (Function *)ty;
+            parseFuncSpec(fn->spec, fn);
+            dumpFunction(fn);
         }
     }
 }
+
+// import = "#import" "[" library-functions* "]"
+// library-functions = string ("stdcall" | "cdecl") "[" (word: string spec-block)* "]"
+Token * Parser::parseImport(Token *tok, Context *ctx) {
+    assert(tok->id == TokenIdMacroImport);
+
+    auto main_tok = tok;
+    tok = skip(tok->next, TokenIdLBracket, '[');
+    while (tok->id != TokenIdRBracket) {
+        auto lib_name = tok;
+        tok = skip(tok, TokenIdString, "library name");
+
+        // calling convention
+        FuncAttr attr{};
+        if (tok->id == TokenIdWord) {
+            if (tok->equals("stdcall")) attr = AttrStdcall;
+            else if(tok->equals("cdecl")) attr = AttrCdecl;
+            else comp.error(tok, err_expected, "calling convention (stdcall or cdecl");
+        } else {
+            comp.error(tok, err_expected, "calling convention (stdcall or cdecl)");
+        }
+
+        // "[" (word: string spec-block)* "]"
+        tok = skip(tok->next, TokenIdLBracket, '[');
+        while (tok->id != TokenIdRBracket) {
+            auto func = newNode<Function>(TypeFunc, tok);
+            tok = skip(tok, TokenIdSetWord, "set-word"); 
+           
+            func->import_name = tok;
+            tok = skip(tok, TokenIdString, "string");
+            
+            tok = parseFuncSpec(tok, func, true);
+            func->data.import_lib = lib_name;
+            func->attrs.value = attr;
+            addDecl(ctx, func->tok->str(), func);
+        }
+        tok = tok->next;
+    }
+    main_tok->next = tok->next;
+    return tok->next;
+}
+
 
 // 1. Collect function, import function, alias, context and enum
 // 2. Try to collect global variable as many as possible
@@ -466,6 +520,7 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
             skip_decl = true;
             break;
         case TokenIdMacroImport:
+            rest = parseImport(tok, ctx);
             skip_decl = true;
             break;
         case TokenIdLBracket: 
@@ -524,11 +579,23 @@ Program * Parser::parse(Token *tok) {
     curGlobal = &global;
 
     tok = collectDeclarations(tok, ctx);
-dumpTokens(tok, "After collectDeclarations");
+//dumpTokens(tok, "After collectDeclarations");
+    resolveDecls(ctx);
 
-    resolveStructs(ctx);
+    
 
     program->functions = func.next;
     program->data = global.next;
     return program;
+}
+
+void dumpFunction(Function *func) {
+    llvm::errs() << func->tok->str() << ":\n";
+    llvm::errs() << "Params: " << func->n_params << " ";
+    auto p = func->params;
+    while (p) {
+        llvm::errs() << p->tok->str() << " ";
+        p = p->next;
+    }
+    llvm::errs() << '\n';
 }

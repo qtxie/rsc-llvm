@@ -34,7 +34,6 @@ bool Utils::consume(Token *tok, TokenId id, Token **rest) {
 
 // `rest` points to the tok next to the end tok if success.
 uint32_t Utils::skipContainer(Token *tok, Token **rest, TokenId beg, TokenId end) {
-    expect(tok, TokenIdLBracket, '[');
     Token *start = tok;
     uint32_t level = 0;
     uint32_t n = 0;

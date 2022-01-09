@@ -13,6 +13,18 @@
 
 using llvm::StringMap;
 
+enum FuncAttr {
+    AttrStdcall  = 0x0001,
+    AttrCdecl    = 0x0002,
+    AttrInfix    = 0x0004,
+    AttrCallback = 0x0008,
+    AttrVariadic = 0x0010,
+    AttrTyped    = 0x0020,
+    AttrCustom   = 0x0040,
+    AttrCatch    = 0x0080,
+    AttrInline   = 0x0100
+};
+
 // AST node type
 enum NodeId : uint8_t {
     NodeUndef,
@@ -26,6 +38,8 @@ enum NodeId : uint8_t {
     TypeEnum,
     TypeBinary,
     TypePtr,
+    TypeFuncUnresolved,
+    TypeFuncBodyUnresolved,
     TypeFunc,
     TypeArray,
     TypeStructUnresolved,
@@ -33,7 +47,6 @@ enum NodeId : uint8_t {
     TypeAlias,
     TypeType,
     NodeAssign,
-    NodeFunc,
     NodeFuncCall,
     NodeVar,
     NodeNull,
@@ -77,7 +90,6 @@ enum NodeId : uint8_t {
 struct Node {
     NodeId id;
     bool is_signed;
-    bool is_extern;
     uint16_t align;
     uint32_t size;
     Node *next;
@@ -92,7 +104,7 @@ struct Type : Node {
         int64_t value;
         const Type *type;
         Node *member;
-        Token *tokens;
+        Token *st_body; // struct body
         Token *import_lib;
     } data;
 };
@@ -110,17 +122,21 @@ struct Member : Type {
 };
 
 struct Function : Type {
+    Token *import_name;
     uint32_t n_params;
     uint32_t n_locals;
     Node *params;
     Node *locals;
-
     const Type *return_type;
     Token *spec;
-    Token *body;
-    Token *attrs;
-
-    bool is_inline;
+    union {
+        Token *token;
+        Node  *node;
+    } body;
+    union {
+        Token *token;
+        FuncAttr value;
+    } attrs;
 };
 
 struct VarNode: Node {
@@ -179,13 +195,14 @@ public:
 
 private:
     void addDecl(Context *ctx, const StringRef& name, Node *node);
-    Node * findDecl(StringRef name);
-    const Type * findType(const StringRef& name);
+    Node * findDecl(StringRef name, Context **ctx_out);
+    const Type * findType(const StringRef& name,  Context **ctx_out);
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
 
     Token * parseLocal(Token *tok, Function *func);
     Token * parseFuncSpec(Token *tok, Function *func, bool is_collect = false);
     Token * parseEnum(Token *tok, Context *ctx);
+    Token * parseImport(Token *tok, Context *ctx);
     Node * parseMembers(Token *tok, Token **rest);
     Type * parseStruct(Token *tok, Token **rest, bool is_collect = false);
 
@@ -195,8 +212,8 @@ private:
     Node * collectDecl(Token *tok, Token **rest);
     Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = false);
 
-    bool resolveStruct(Type *ty);
-    void resolveStructs(Context *ctx);
+    bool resolveStruct(Type *ty, Context *ctx);
+    void resolveDecls(Context *ctx);
 
     Context *newContext(Token *main_tok) {
         Context *c = new (nodeBuf.alloc(sizeof(Context))) Context;
@@ -227,5 +244,7 @@ private:
     template <typename T>
     T * newNode(const T *node) {return new (nodeBuf.alloc(sizeof(T))) T{*node};}
 };
+
+void dumpFunction(Function *func);
 
 #endif /* RED_SYSTEM_PARSER_H */

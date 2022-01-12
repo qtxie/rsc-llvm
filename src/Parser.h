@@ -14,15 +14,23 @@
 using llvm::StringMap;
 
 enum FuncAttr {
-    AttrStdcall  = 0x0001,
-    AttrCdecl    = 0x0002,
-    AttrInfix    = 0x0004,
-    AttrCallback = 0x0008,
-    AttrVariadic = 0x0010,
-    AttrTyped    = 0x0020,
-    AttrCustom   = 0x0040,
-    AttrCatch    = 0x0080,
-    AttrInline   = 0x0100
+    FuncStdcall  = 0x0001,
+    FuncCdecl    = 0x0002,
+    FuncInfix    = 0x0004,
+    FuncCallback = 0x0008,
+    FuncVariadic = 0x0010,
+    FuncTyped    = 0x0020,
+    FuncCustom   = 0x0040,
+    FuncCatch    = 0x0080,
+    FuncInline   = 0x0100
+};
+
+enum VarAttr {
+    VarStatic    = 0x0001,
+    VarGlobal    = 0x0002,
+    VarLocal     = 0x0004,
+    VarExtern    = 0x0008,
+    VarTLS       = 0x0010,
 };
 
 // AST node type
@@ -56,7 +64,7 @@ enum NodeId : uint8_t {
     NodeFloat,
     NodeString,
     NodeArray,
-    NodeStruct,
+    NodeMemberAccess,
     NodeContext,
     NodePointer,
     NodeGetAddr,        // :abc
@@ -96,6 +104,7 @@ struct Node {
     Token *tok;         // main token
 };
 
+typedef StringMap<Node *> HashMap;
 typedef NodeId TypeId;
 
 struct Type : Node {
@@ -139,16 +148,26 @@ struct Function : Type {
     } attrs;
 };
 
-struct VarNode: Node {
+struct Variable : Node {
     Type *type;
+    Node *init_data;
+    VarAttr attrs;
+    int offset;     // for local variable
 };
 
-struct Integer : Node {
-
+struct BinaryOp : Node {
+    Node *lhs;
+    Node *rhs;
 };
 
-struct Assign : Node {
+typedef BinaryOp Assignment;
 
+struct Unary : Node {
+    Node *value;
+};
+
+struct MemberAccess : Node {
+    Node *member;
 };
 
 struct If : Node {
@@ -161,14 +180,14 @@ struct Either : Node {
 
 struct Context : Node {
     Context *parent;
-    StringMap<Node *> decls;   // for struct, enum, function, alias
-    StringMap<Node *> vars;    // for variables
+    HashMap decls;             // for struct, enum, function, alias
+    HashMap vars;              // for variables
 };
 
 struct Program : Node {
     Node *functions;
     Node *data;                // global variables
-    Node *entry;               // entry function
+    Node *entry;               // program entry
     Context *ctx;              // global context
 };
 
@@ -194,17 +213,27 @@ public:
     Program *parse(Token *tok);
 
 private:
-    void addDecl(Context *ctx, const StringRef& name, Node *node);
+    // add variable if and only if it's not in the hashmap.
+    // return the variable if it's already in the hashmap.
+    Node * addVar(StringRef name, Node *node);
+    void addDecl(Context *ctx, StringRef name, Node *node);
+    Context * findContext(Token *tok);
+    Variable * findVar(StringRef name, Context **ctx_out);
     Node * findDecl(StringRef name, Context **ctx_out);
-    const Type * findType(const StringRef& name,  Context **ctx_out);
-    const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
+    const Type * findType(StringRef name,  Context **ctx_out);
 
+    const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
+    Node * parseAssign(Token *tok, Token **rest);
+    Node * parseExpr(Token *tok, Token **rest);
     Token * parseLocal(Token *tok, Function *func);
     Token * parseFuncSpec(Token *tok, Function *func, bool is_collect = false);
     Token * parseEnum(Token *tok, Context *ctx);
     Token * parseImport(Token *tok, Context *ctx);
     Node * parseMembers(Token *tok, Token **rest);
     Type * parseStruct(Token *tok, Token **rest, bool is_collect = false);
+    Node * parseSetWord(Token *tok, Token **rest, Node **expr);
+    Node * parsePath(Token *tok, Token **rest);
+    Node * parseProgram(Token *tok, Context *ctx);
 
     const Type * collectType(Token *tok, Token **rest) {
         return parseType(tok, rest, false, true);
@@ -213,7 +242,9 @@ private:
     Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = false);
 
     bool resolveStruct(Type *ty, Context *ctx);
-    void resolveDecls(Context *ctx);
+    void resolveDeclarations(Context *ctx);
+
+    Variable *newVar(Token *tok, bool is_global = false);
 
     Context *newContext(Token *main_tok) {
         Context *c = new (nodeBuf.alloc(sizeof(Context))) Context;
@@ -242,7 +273,16 @@ private:
     }
 
     template <typename T>
-    T * newNode(const T *node) {return new (nodeBuf.alloc(sizeof(T))) T{*node};}
+    T * newNode(NodeId id, Node *lhs, Node *rhs) {
+        T *node = (T *)nodeBuf.alloc(sizeof(T));
+        node->id = id;
+        node->lhs = lhs;
+        node->rhs = rhs;
+        return node;
+    };
+
+    template <typename T>
+    T * copyNode(const T *node) {return new (nodeBuf.alloc(sizeof(T))) T{*node};}
 };
 
 void dumpFunction(Function *func);

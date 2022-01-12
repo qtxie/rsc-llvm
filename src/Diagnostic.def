@@ -20,6 +20,7 @@ DIAG(err_expected, Error, "expected {0}")
 DIAG(err_expected_arg, Error, "expected {0} but found {1}")
 DIAG(err_invalid_func, Error, "invalid definition for function")
 
+DIAG(err_invalid_cascade, Error, "cannot cascade declare {0}")
 DIAG(err_invalid_type, Error, "invalid type")
 DIAG(err_invalid_struct, Error, "invalid struct syntax: {0}")
 DIAG(err_invalid_enum, Error, "invalid enumeration syntax: {0}")
@@ -42,6 +43,6 @@ DIAG(err_function_requires_return, Error, "Function requires RETURN with value")
 DIAG(err_procedure_requires_empty_return, Error, "Procedure does not allow RETURN with value")
 DIAG(err_function_and_return_type, Error, "Type of RETURN value is not compatible with function type")
 
-DIAG(err_not_yet_implemented, Error, "module imports are not yet implemented")
+DIAG(err_not_yet_implemented, Error, "feature is not yet implemented")
 
 #undef DIAG

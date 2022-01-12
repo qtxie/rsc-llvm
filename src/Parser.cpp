@@ -10,34 +10,32 @@
 
 /** Grammar
  * 
- *  program           = code-block
- *  code-block        = "[" (directive | declaration | statement | expression)* "]"
- *
- *  directive         = (syscall | import | enum)*
+ *  program           = (declaration | statement | expression)*
+ * 
+ *  declaration       = (word: (function-decl | context-decl | alias-decl)) | syscall | import | enum
+ *  function-decl     = ("func" | "function") func-spec-block body-block
+ *  context-decl      = "context" "[" program "]"
+ *  alias-decl        = "alias" type
  *  syscall           = "#syscall" "[" word: integer func-spec-block "]"
  *  import            = "#import" "[" library-functions* "]"
  *  enum              = "#enum" word "[" (word | (word:+ integer))+ "]"
- *
- *  library-functions = string ("stdcall" | "cdecl") "[" (word: string spec-block)* "]"
- *  spec-block        = func-spec-block | var-spec-block
+ * 
  *  func-spec-block   = "[" func-attrs-block? doc-string? param* return-spec? ("/local" local-var+)? "]"
- *  var-spec-block    = "[" type "]"
+ *  body-block        = "[" (word: alias-decl) | import | enum | statement | expression)* "]"
  *  func-attrs-block  = "[" "infix" | "catch" | "callback" | "custom" | "stdcall" | "cdecl" (variadic | typed)? "]"
  *  param             = typed-word doc-string?
  *  typed-word        = word "[" type "]"
  *  local-var         = word+ ("[" type "]")?
  *  return-spec       = "return:" "[" type "]"
- * 
- *  declaration       = qualified-word: (function-decl | context-decl | alias-decl)
- *  function-decl     = ("func" | "function") func-spec-block body-block
- *  context-decl      = "context" code-block
- *  alias-decl        = "alias" type
  *  qualified-word    = ((word/)*)word
  *  path              = path-head/(word | integer)
  *  path-head         = word | path
- *  body-block        = "[" (directive | alias-decl | statement | expression)* "]"
  * 
- *  statement         = conditional-stmt | return-stmt | with-stmt | use-stmt | assignment
+ *  library-functions = string ("stdcall" | "cdecl") "[" (word: string spec-block)* "]"
+ *  spec-block        = func-spec-block | var-spec-block
+ *  var-spec-block    = "[" type "]"
+ * 
+ *  statement         = conditional-stmt | return-stmt | exception-stmt | with-stmt | use-stmt | assignment
  * 
  *  conditional-stmt  = if-stmt | either-stmt | case-stmt | switch-stmt | while-stmt | until-stmt
  *  if-stmt           = "if" cond-expr body-block
@@ -47,21 +45,25 @@
  *  while-stmt        = "while" cond-block body-block
  *  until-stmt        = "until" cond-block 
  *  return-stmt       = "exit" | "return" expression
+ *  exception-stmt    = catch | throw
  *  with-stmt         = "with" (qualified-word | "[" qualified-word+ "]") body-block
  *  use-stmt          = "use" "[" param+ "]" body-block
  *  cond-expr         = expression
  *  selectors         = (integer-literal | byte-literal)+
  * 
- *  assignment        = lh-side rh-expression
+ *  assignment        = lh-side+ expression
  *  lh-side           = qualified-word: | path:
- *  rh-expression     = expression | "declare" type 
  * 
- *  expression        = call | value | type-cast | size-enquiry | short-circuit | binary-operation
- *  call              = call-fixed-arg | call-variadic
+ *  expression        = builtin | func-call | type-cast | short-circuit | binary-operation | value
+ * 
+ *  builtin           = declare | size-enquiry | not
+ *  declare           = "declare" type
+ *  size-enquiry      = "size?" (type | string-literal)
+ *  not               = not expression
+ * 
+ *  func-call         = call-fixed-arg | call-variadic
  *  call-fixed-arg    = qualified-word expression*
  *  call-variadic     = qualified-word (expression | "[" expression+ "]")
- * 
- *  value             = literal | "(" expression ")" | word | path | get-word | get-path
  * 
  *  type-cast         = "as" (type | "[" type "]") "keep"? expression
  *  type              = integer! | byte! |  logic! | c-string! | float! | float32! | float64! | subroutine! |
@@ -69,9 +71,7 @@
  *  func-type         = function! func-spec-block
  *  pointer-type      = pointer! "[" type "]"
  *  struct-type       = struct! "[" typed-word+ "]" "value"?
- * 
- *  size-enquiry      = "size?" (type | string-literal)
- * 
+ *  
  *  short-circuit     = all | any | either | if | switch | case
  *  all               = "all" "[" expression+ "]"
  *  any               = "any" "[" expression+ "]"
@@ -82,9 +82,17 @@
  *  bitwise-op        = "and" | "or" | "xor" | "<<" | ">>" | ">>>"
  *  comparison-op     = "=" | "<>" | "<" | "<=" | ">=" | ">"
  *
+ *  value             = literal | "(" expression ")" | word | path | get-word | get-path
+ * 
  **/
 
-void Parser::addDecl(Context *ctx, const StringRef& name, Node *node) {
+Node * Parser::addVar(StringRef name, Node *node) {
+    auto& vars = curCtx->vars;
+    auto const & [keyval, is_new] = vars.insert({name, node});
+    return keyval->second;
+}
+
+void Parser::addDecl(Context *ctx, StringRef name, Node *node) {
     auto& decls = ctx->decls;
     auto const & [keyval, is_new] = decls.insert({name, node});
     if (!is_new)
@@ -106,6 +114,29 @@ Node * Parser::findDecl(StringRef name, Context **ctx_out) {
     return nullptr;
 }
 
+Variable * Parser::findVar(StringRef name, Context **ctx_out) {
+    auto ctx = curCtx;
+    do {
+        auto& vars = ctx->vars;
+        auto it = vars.find(name);
+        if (it != vars.end()) {
+            *ctx_out = ctx;
+            return (Variable *)it->second;
+        } else {
+            ctx = ctx->parent;
+        }
+    } while (ctx);
+    return nullptr;
+}
+
+Context * Parser::findContext(Token *tok) {
+    Context *ctx_out = nullptr;
+    Context *ctx = (Context *)findDecl(tok->str(), &ctx_out);
+    if (ctx && ctx->id == NodeContext)
+        return ctx;
+    return nullptr;
+}
+
 constexpr auto genDatatypes()
 {
     std::array<std::pair<StringRef, Type>, 6> datatypes = {{
@@ -119,7 +150,7 @@ constexpr auto genDatatypes()
     return datatypes;
 }
 
-const Type * Parser::findType(const StringRef& name, Context **ctx) {
+const Type * Parser::findType(StringRef name, Context **ctx) {
     static constexpr auto basic_types = genDatatypes();
     auto it = std::lower_bound(basic_types.begin(), basic_types.end(), name,
         [](const auto &a, const auto &b) {return -1 == a.first.compare_insensitive(b);});
@@ -182,7 +213,7 @@ Token * Parser::parseLocal(Token *tok, Function *func) {
             auto name = ident.next;
             auto type = parseType(tok, &tok);
             while (n--) {
-                cur = cur->next = newNode<Type>(type);
+                cur = cur->next = copyNode<Type>(type);
                 cur->tok = name;
                 name = name->next;
             }
@@ -228,7 +259,7 @@ Token *Parser::parseFuncSpec(Token *tok, Function *func, bool is_collect) {
         if (state == Param && tok->id == TokenIdWord) {
             // param = word "[" type "]" doc-string?
             auto ident = tok;
-            auto param = newNode<Type>(parseType(tok->next, &tok));
+            auto param = copyNode<Type>(parseType(tok->next, &tok));
             param->tok = ident;
             func->params = func->params->next = param;
             func->n_params++;
@@ -304,7 +335,7 @@ Type * Parser::parseStruct(Token *tok, Token **rest, bool is_collect) {
 
 // declaration = qualified-word: (function-decl | context-decl | alias-decl)
 Node * Parser::collectDecl(Token *tok, Token **rest) {
-    assert(tok->id == TokenIdSetWord);
+    assert(tok->id == TokenIdSetWord || tok->id == TokenIdSetColon);
 
     *rest = tok;
     Token *name = tok;
@@ -369,8 +400,6 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
     Node *cur = &head;
     while (tok->id != TokenIdEof) {
         if (tok->id == TokenIdWord && head.next == nullptr) {
-            if (tok->sub_id == TokenIdKeyword)
-                comp.error(tok, err_redefine_keyword, tok->str());
             Type *elem = newNode<Type>(TypeEnum, tok);
             elem->next = node;
             elem->tid = node->tid;
@@ -395,6 +424,8 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
         } else if (tok->id == TokenIdRBracket) {
             tok = tok->next;
             break;
+        } else if (tok->sub_id == TokenIdKeyword) {
+            comp.error(tok, err_redefine_keyword, tok->str());
         } else {
             comp.error(tok, err_invalid_enum, tok->str());
         }
@@ -423,13 +454,13 @@ bool Parser::resolveStruct(Type *ty, Context *ctx) {
     return false;
 }
 
-void Parser::resolveDecls(Context *ctx) {
+void Parser::resolveDeclarations(Context *ctx) {
     curCtx = ctx;
     for (auto const &val : ctx->decls) {
         Type *ty = (Type *)val.second;
         //llvm::errs() << ty->tok->str() << "\n";
         if (!resolveStruct(ty, ctx) && ty->id == NodeContext) {
-            resolveDecls((Context *)ty);
+            resolveDeclarations((Context *)ty);
             curCtx = ctx;
         } else if (ty->id == TypeFuncUnresolved) {
             Function *fn = (Function *)ty;
@@ -453,8 +484,8 @@ Token * Parser::parseImport(Token *tok, Context *ctx) {
         // calling convention
         FuncAttr attr{};
         if (tok->id == TokenIdWord) {
-            if (tok->equals("stdcall")) attr = AttrStdcall;
-            else if(tok->equals("cdecl")) attr = AttrCdecl;
+            if (tok->equals("stdcall")) attr = FuncStdcall;
+            else if(tok->equals("cdecl")) attr = FuncCdecl;
             else comp.error(tok, err_expected, "calling convention (stdcall or cdecl");
         } else {
             comp.error(tok, err_expected, "calling convention (stdcall or cdecl)");
@@ -480,10 +511,8 @@ Token * Parser::parseImport(Token *tok, Context *ctx) {
     return tok->next;
 }
 
-
 // 1. Collect function, import function, alias, context and enum
-// 2. Try to collect global variable as many as possible
-// 3. Recognize path!
+// 2. Recognize path! and get-path!
 Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
     SmallVector<std::pair<Token *, uint32_t>> bracket;
     SmallVector<std::pair<Token *, uint32_t>> paren;
@@ -499,19 +528,23 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
         switch (tok->id)
         {
         case TokenIdWord:
+        case TokenIdGetWord: 
             if (tok->next->id == TokenIdSlash) {    // a path
-                tok->id = TokenIdPath;
+                tok->id = (tok->id == TokenIdWord) ? TokenIdPath : TokenIdGetPath;
                 cur = cur->next = tok;
                 tok = tok->next->next;
                 continue;
             }
             break;
         case TokenIdSetWord:
+        case TokenIdSetColon:
             node = collectDecl(tok, &rest);
             if (node) {
-                addDecl(ctx, tok->str(), node);
-                if (cur->id == TokenIdPath)
+                if (cur->id == TokenIdPath || tok->id == TokenIdSetColon)
                     comp.error(tok->next, err_cannot_declared, tok->next->str());
+                else if (cur->id == TokenIdSetWord)
+                    comp.error(cur, err_invalid_cascade, tok->next->str());
+                addDecl(ctx, tok->str(), node);
                 skip_decl = true;
             }
             break;
@@ -569,6 +602,122 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
     return head.next;
 }
 
+Node * Parser::parseSetWord(Token *tok, Token **rest, Node **expr) {
+    Context *ctx = nullptr;
+    Variable *var = (Variable *) findVar(tok->str(), &ctx);
+    if (!var) var = newNode<Variable>(NodeVar, tok);;
+
+    Node *node = nullptr;
+    tok = tok->next;
+    switch (tok->id)
+    {
+    case TokenIdSetWord:
+        node = parseSetWord(tok, rest, expr); break;
+    // already handled in collect phase
+    case TokenIdFunc:
+    case TokenIdAlias:
+        *rest = tok->next;
+        *expr = nullptr;
+        break;
+    default:
+        node = parseExpr(tok, rest);
+        *expr = node;
+        break;
+    }
+    return newNode<Assignment>(NodeAssign, (Node *)var, node);
+}
+
+Node * Parser::parsePath(Token *tok, Token **rest) {
+    Node head{};
+    Node *prev = &head;
+    Context *saved_ctx = curCtx;
+    while (true) {
+        if (tok->id == TokenIdPath) {
+            Context *ctx = nullptr;
+            Variable *var = findVar(tok->str(), &ctx);
+            if (var && var->type->id == TypeStruct) {
+                auto mem = newNode<Unary>(NodeMemberAccess, tok);
+                mem->value = var;
+                prev = prev->next = mem;
+            } else if (ctx = findContext(tok)) {
+                curCtx = ctx;
+            } else {
+                comp.error(tok, err_undeclared_name, tok->str());
+            }
+            tok = tok->next;
+        } else {
+            auto expr = parseExpr(tok, &tok);
+            prev = prev->next = expr;
+            if (tok->id == TokenIdSlash)
+                tok = tok->next;
+            else
+                break;
+        }
+    }
+    curCtx = saved_ctx;
+    *rest = tok;
+    return head.next;
+}
+
+Node * Parser::parseExpr(Token *tok, Token **rest) {
+    if (tok->id == TokenIdSetWord) {
+
+    } else if(tok->id == TokenIdPath) {
+        Context *ctx_out = nullptr;
+        auto val = findDecl(tok->str(), &ctx_out);
+        if (val->id == NodeContext) {
+
+        } else if (val->id == TypeStruct) {
+
+        } else {
+            comp.error(tok, err_undeclared_name, tok->str());
+        }
+    }
+    return nullptr;
+}
+
+Node * Parser::parseProgram(Token *tok, Context *ctx) {
+    Node head{};
+    Node *cur = &head;
+    Node *node = nullptr;
+    Node *expr = nullptr;
+    while (tok->id != TokenIdEof) {
+        switch (tok->id)
+        {
+        // declaration
+        case TokenIdMacroEnum: break;
+        case TokenIdMacroImport: break;
+
+        // statement
+        case TokenIdIf: break;
+        case TokenIdEither: break;
+        case TokenIdCase: break;
+        case TokenIdSwitch: break;
+        case TokenIdWhile: break;
+        case TokenIdUntil: break;
+        case TokenIdLoop: break;
+        case TokenIdReturn: break;
+        case TokenIdExit: break;
+        case TokenIdWith: break;
+        case TokenIdUse: break;
+        case TokenIdSetWord:
+            node = parseSetWord(tok, &tok, &expr);
+            if (!expr) continue;
+            break;
+        case TokenIdPath:
+            node = parsePath(tok, &tok);
+            break;
+
+        // expression
+        default:
+            node = parseExpr(tok, &tok);
+            break;
+        }
+        cur = cur->next = node;
+    }
+    return head.next;
+}
+
 Program * Parser::parse(Token *tok) {
     Program *program = newNode<Program>(NodeProgram, tok);
     Context *ctx = newContext(tok);
@@ -580,9 +729,9 @@ Program * Parser::parse(Token *tok) {
 
     tok = collectDeclarations(tok, ctx);
 //dumpTokens(tok, "After collectDeclarations");
-    resolveDecls(ctx);
+    resolveDeclarations(ctx);
 
-    
+    parseProgram(tok, ctx);
 
     program->functions = func.next;
     program->data = global.next;

@@ -31,10 +31,30 @@ struct Token {
     // Helper functions
     constexpr StringRef str() {return StringRef(loc, len);}
 
-    bool equals(const StringLiteral s) const {return StringRef(loc, len).equals(s);}
+    // return true if failure
+    bool toInteger(int64_t &result) {
+        return str().getAsInteger(id == TokenIdHex ? 16 : 10, result);
+    }
 
+    // return true if failure
+    bool toDouble(double &result) {
+        return str().getAsDouble(result);
+    }
+
+    // case insensitive comparision
+    bool equals(const StringLiteral s) const {
+        return StringRef(loc, len).equals_insensitive(s);
+    }
+    bool equals(const StringRef s) {
+        return StringRef(loc, len).equals_insensitive(s);
+    }
+    bool equals(Token *tok) const {
+        return StringRef(loc, len).equals_insensitive(tok->str());
+    }
+
+    // case sensitive comparision
     bool operator==(const StringLiteral s) const {
-        return 0 == StringRef(loc, len).compare_insensitive(s);
+        return StringRef(loc, len).equals(s);
     }
 
     Token * operator+(std::size_t n) {

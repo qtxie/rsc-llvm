@@ -57,13 +57,6 @@ enum NodeId : uint8_t {
     NodeAssign,
     NodeFuncCall,
     NodeVar,
-    NodeNull,
-    NodeByte,
-    NodeBool,
-    NodeInt,
-    NodeFloat,
-    NodeString,
-    NodeArray,
     NodeMemberAccess,
     NodeContext,
     NodePointer,
@@ -110,6 +103,7 @@ typedef NodeId TypeId;
 struct Type : Node {
     uint32_t  tid;     // unique id
     union {
+        double fvalue;
         int64_t value;
         const Type *type;
         Node *member;
@@ -187,7 +181,7 @@ struct Context : Node {
 struct Program : Node {
     Node *functions;
     Node *data;                // global variables
-    Node *entry;               // program entry
+    Node *ast;
     Context *ctx;              // global context
 };
 
@@ -215,25 +209,25 @@ public:
 private:
     // add variable if and only if it's not in the hashmap.
     // return the variable if it's already in the hashmap.
-    Node * addVar(StringRef name, Node *node);
-    void addDecl(Context *ctx, StringRef name, Node *node);
+    Node * addVar(Token * name, Node *node);
+    void addDecl(Context *ctx, Token * name, Node *node);
     Context * findContext(Token *tok);
-    Variable * findVar(StringRef name, Context **ctx_out);
-    Node * findDecl(StringRef name, Context **ctx_out);
-    const Type * findType(StringRef name,  Context **ctx_out);
+    Variable * findVar(Token * name, Context **ctx_out);
+    Node * findDecl(Token * name, Context **ctx_out);
+    const Type * findType(Token * name,  Context **ctx_out);
+
+    Unary *getStructMember(Unary *st, Token *tok);
 
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
-    Node * parseAssign(Token *tok, Token **rest);
-    Node * parseExpr(Token *tok, Token **rest);
+    Node * parseExpr(Token *tok, Token **rest, Node **expr);
     Token * parseLocal(Token *tok, Function *func);
     Token * parseFuncSpec(Token *tok, Function *func, bool is_collect = false);
     Token * parseEnum(Token *tok, Context *ctx);
     Token * parseImport(Token *tok, Context *ctx);
     Node * parseMembers(Token *tok, Token **rest);
     Type * parseStruct(Token *tok, Token **rest, bool is_collect = false);
-    Node * parseSetWord(Token *tok, Token **rest, Node **expr);
-    Node * parsePath(Token *tok, Token **rest);
-    Node * parseProgram(Token *tok, Context *ctx);
+    Node * parsePath(Token *tok, Token **rest, bool &is_setpath);
+    Node * parseProgram(Token *tok, Token **rest, Context *ctx, bool is_block = true);
 
     const Type * collectType(Token *tok, Token **rest) {
         return parseType(tok, rest, false, true);
@@ -286,5 +280,6 @@ private:
 };
 
 void dumpFunction(Function *func);
+void dumpAst(Node *node);
 
 #endif /* RED_SYSTEM_PARSER_H */

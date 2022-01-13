@@ -97,7 +97,7 @@ Token * Compilation::tokenizeFile(const std::string &filepath, Token **end_token
 
 Token * Compilation::checkHeader(Token *tok, bool skip_header) {
     Token &t = *tok;
-    if (t.equals("Red") && t[1].equals("/") && t[2].equals("System") && t[3].id == TokenIdLBracket) {
+    if (t == "Red" && t[1] == "/" && t[2] == "System" && t[3].id == TokenIdLBracket) {
         // Skip header block
         if (skip_header) {
             tok = t + 3;

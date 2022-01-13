@@ -86,24 +86,24 @@
  * 
  **/
 
-Node * Parser::addVar(StringRef name, Node *node) {
+Node * Parser::addVar(Token *name, Node *node) {
     auto& vars = curCtx->vars;
-    auto const & [keyval, is_new] = vars.insert({name, node});
+    auto const & [keyval, is_new] = vars.insert({name->str(), node});
     return keyval->second;
 }
 
-void Parser::addDecl(Context *ctx, StringRef name, Node *node) {
+void Parser::addDecl(Context *ctx, Token *name, Node *node) {
     auto& decls = ctx->decls;
-    auto const & [keyval, is_new] = decls.insert({name, node});
+    auto const & [keyval, is_new] = decls.insert({name->str(), node});
     if (!is_new)
-        comp.error(name.data(), err_symbol_declared, name);
+        comp.error(name, err_symbol_declared, name);
 }
 
-Node * Parser::findDecl(StringRef name, Context **ctx_out) {
+Node * Parser::findDecl(Token *name, Context **ctx_out) {
     auto ctx = curCtx;
     do {
         auto& decls = ctx->decls;
-        auto it = decls.find(name);
+        auto it = decls.find(name->str());
         if (it != decls.end()) {
             *ctx_out = ctx;
             return it->second;
@@ -114,11 +114,11 @@ Node * Parser::findDecl(StringRef name, Context **ctx_out) {
     return nullptr;
 }
 
-Variable * Parser::findVar(StringRef name, Context **ctx_out) {
+Variable * Parser::findVar(Token *name, Context **ctx_out) {
     auto ctx = curCtx;
     do {
         auto& vars = ctx->vars;
-        auto it = vars.find(name);
+        auto it = vars.find(name->str());
         if (it != vars.end()) {
             *ctx_out = ctx;
             return (Variable *)it->second;
@@ -131,7 +131,7 @@ Variable * Parser::findVar(StringRef name, Context **ctx_out) {
 
 Context * Parser::findContext(Token *tok) {
     Context *ctx_out = nullptr;
-    Context *ctx = (Context *)findDecl(tok->str(), &ctx_out);
+    Context *ctx = (Context *)findDecl(tok, &ctx_out);
     if (ctx && ctx->id == NodeContext)
         return ctx;
     return nullptr;
@@ -150,12 +150,12 @@ constexpr auto genDatatypes()
     return datatypes;
 }
 
-const Type * Parser::findType(StringRef name, Context **ctx) {
+const Type * Parser::findType(Token *name, Context **ctx) {
     static constexpr auto basic_types = genDatatypes();
-    auto it = std::lower_bound(basic_types.begin(), basic_types.end(), name,
+    auto it = std::lower_bound(basic_types.begin(), basic_types.end(), name->str(),
         [](const auto &a, const auto &b) {return -1 == a.first.compare_insensitive(b);});
 
-    if (it == basic_types.end() || it->first != name) {
+    if (it == basic_types.end() || !name->equals(it->first)) {
         auto node = findDecl(name, ctx);
         if (node && node->id < TypeType) return (Type *)node;
     } else {
@@ -169,7 +169,7 @@ const Type * Parser::parseType(Token *tok, Token **rest, bool is_block, bool is_
     if (tok->id != TokenIdWord)
         comp.error(tok, err_expected, "datatype");
     Context *ctx = nullptr;
-    const Type *type = findType(tok->str(), &ctx);
+    const Type *type = findType(tok, &ctx);
     if (type) {  // alias type
         tok = tok->next;
         if (!is_collect && tok->id == TokenIdWord && tok->equals("value")) {
@@ -390,7 +390,7 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
     tok = tok->next;
     Type *node = newNode<Type>(TypeEnum, tok);
     node->tid = curTypeId++;
-    addDecl(ctx, StringRef(tok->loc, tok->len), node);
+    addDecl(ctx, tok, node);
 
     tok = skip(tok, TokenIdWord, "word");
     tok = skip(tok, TokenIdLBracket, '[');
@@ -404,12 +404,12 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
             elem->next = node;
             elem->tid = node->tid;
             elem->data.value = val++;
-            addDecl(ctx, tok->str(), elem);
+            addDecl(ctx, tok, elem);
         } else if (tok->id == TokenIdSetWord) {
             Type *elem = newNode<Type>(TypeEnum, tok);
             cur = cur->next = elem;
         } else if ((tok->id == TokenIdHex || tok->id == TokenIdInteger) && head.next) {
-            tok->str().getAsInteger(tok->id == TokenIdHex ? 16 : 10, val);
+            tok->toInteger(val);
             cur = head.next;
             do {
                 Type *elem = (Type *)cur;
@@ -417,7 +417,7 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
                 elem->next = node;
                 elem->tid = node->tid;
                 elem->data.value = val;
-                addDecl(ctx, elem->tok->str(), elem);
+                addDecl(ctx, elem->tok, elem);
             } while (cur);
             head.next = nullptr;
             cur = &head;
@@ -503,7 +503,7 @@ Token * Parser::parseImport(Token *tok, Context *ctx) {
             tok = parseFuncSpec(tok, func, true);
             func->data.import_lib = lib_name;
             func->attrs.value = attr;
-            addDecl(ctx, func->tok->str(), func);
+            addDecl(ctx, func->tok, func);
         }
         tok = tok->next;
     }
@@ -531,9 +531,6 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
         case TokenIdGetWord: 
             if (tok->next->id == TokenIdSlash) {    // a path
                 tok->id = (tok->id == TokenIdWord) ? TokenIdPath : TokenIdGetPath;
-                cur = cur->next = tok;
-                tok = tok->next->next;
-                continue;
             }
             break;
         case TokenIdSetWord:
@@ -544,7 +541,7 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
                     comp.error(tok->next, err_cannot_declared, tok->next->str());
                 else if (cur->id == TokenIdSetWord)
                     comp.error(cur, err_invalid_cascade, tok->next->str());
-                addDecl(ctx, tok->str(), node);
+                addDecl(ctx, tok, node);
                 skip_decl = true;
             }
             break;
@@ -602,81 +599,126 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
     return head.next;
 }
 
-Node * Parser::parseSetWord(Token *tok, Token **rest, Node **expr) {
-    Context *ctx = nullptr;
-    Variable *var = (Variable *) findVar(tok->str(), &ctx);
-    if (!var) var = newNode<Variable>(NodeVar, tok);;
+Unary * Parser::getStructMember(Unary *st, Token *tok) {
+    Variable *var = (Variable *)st->value;
+    assert(var->type->id == TypeStruct);
 
-    Node *node = nullptr;
-    tok = tok->next;
-    switch (tok->id)
-    {
-    case TokenIdSetWord:
-        node = parseSetWord(tok, rest, expr); break;
-    // already handled in collect phase
-    case TokenIdFunc:
-    case TokenIdAlias:
-        *rest = tok->next;
-        *expr = nullptr;
-        break;
-    default:
-        node = parseExpr(tok, rest);
-        *expr = node;
-        break;
-    }
-    return newNode<Assignment>(NodeAssign, (Node *)var, node);
-}
-
-Node * Parser::parsePath(Token *tok, Token **rest) {
-    Node head{};
-    Node *prev = &head;
-    Context *saved_ctx = curCtx;
-    while (true) {
-        if (tok->id == TokenIdPath) {
-            Context *ctx = nullptr;
-            Variable *var = findVar(tok->str(), &ctx);
-            if (var && var->type->id == TypeStruct) {
-                auto mem = newNode<Unary>(NodeMemberAccess, tok);
-                mem->value = var;
-                prev = prev->next = mem;
-            } else if (ctx = findContext(tok)) {
-                curCtx = ctx;
-            } else {
-                comp.error(tok, err_undeclared_name, tok->str());
-            }
-            tok = tok->next;
-        } else {
-            auto expr = parseExpr(tok, &tok);
-            prev = prev->next = expr;
-            if (tok->id == TokenIdSlash)
-                tok = tok->next;
-            else
-                break;
-        }
-    }
-    curCtx = saved_ctx;
-    *rest = tok;
-    return head.next;
-}
-
-Node * Parser::parseExpr(Token *tok, Token **rest) {
-    if (tok->id == TokenIdSetWord) {
-
-    } else if(tok->id == TokenIdPath) {
-        Context *ctx_out = nullptr;
-        auto val = findDecl(tok->str(), &ctx_out);
-        if (val->id == NodeContext) {
-
-        } else if (val->id == TypeStruct) {
-
-        } else {
-            comp.error(tok, err_undeclared_name, tok->str());
+    for (auto m = var->type->data.member; m; m = m->next) {
+        if (tok->equals(m->tok)) {
+            auto mem = newNode<Unary>(NodeMemberAccess, tok);
+            mem->value = m;
+            st->next = mem;
+            return mem;
         }
     }
     return nullptr;
 }
 
-Node * Parser::parseProgram(Token *tok, Context *ctx) {
+Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
+    Token *next = nullptr;
+    Variable *var = nullptr;
+    Context *saved_ctx = curCtx;
+
+    // resolve first word in the path
+    do {
+        Context *ctx = nullptr;
+        if (var = findVar(tok, &ctx)) break;
+        if (ctx = findContext(tok)) {
+            curCtx = ctx;
+        } else {
+            comp.error(tok, err_undeclared_name, tok->str());
+        }
+        next = tok->next;
+        tok = next->next;
+    } while (next->id == TokenIdSlash);
+
+    curCtx = saved_ctx;
+    if (!var)
+        comp.error(tok, err_expected, "member in context");
+
+    auto type_id = var->type->id;
+    Unary *node = (Unary *)var;
+    while (tok->next->id == TokenIdSlash) {
+        if (type_id == TypeStruct) {
+            node = newNode<Unary>(NodeMemberAccess, tok);
+            node->value = var;
+            tok = tok->next->next;
+            node = getStructMember(node, tok);
+            if (!node) comp.error(tok, err_undeclared_name, tok->str());
+            type_id = ((Member *)node->value)->id;
+        } else if (type_id == TypePtr) {
+
+        } else if (type_id == TypeArray) {
+
+        } else {
+            comp.error(tok, err_invalid_path);
+        }
+    }
+
+    is_setpath = (tok->id == TokenIdSetWord);
+    *rest = tok;
+    // for case: a/keyword: or a/(n + 1):
+    if (!is_setpath && tok->next->id == TokenIdSetColon) {
+        *rest = tok->next;
+        is_setpath = true;
+    }
+    return node;
+}
+
+Node * Parser::parseExpr(Token *tok, Token **rest, Node **expr) {
+    Context *ctx = nullptr;
+    Node *node = nullptr;
+    Type *ty;
+    bool is_set = false;
+    switch (tok->id) {
+        case TokenIdSetWord:
+            node = findVar(tok, &ctx);
+            if (!node) {
+                node = newNode<Variable>(NodeVar, tok);
+                addVar(tok, node);
+            }
+            is_set = true;
+            break;
+        case TokenIdPath:
+            node = parsePath(tok, &tok, is_set);
+            break;
+        case TokenIdWord:
+            node = findVar(tok, &ctx);
+            if (!node)
+                comp.error(tok, err_undeclared_name, tok->str());
+
+        case TokenIdInteger:
+        case TokenIdHex:
+            ty = newNode<Type>(TypeInt, tok);
+            node = ty;
+            if (tok->toInteger(ty->data.value))
+                comp.error(tok, err_int_overflow);
+            break;
+        case TokenIdFloat:
+            ty = newNode<Type>(TypeDouble, tok);
+            node = ty;
+            if (tok->toDouble(ty->data.fvalue))
+                comp.error(tok, err_float_overflow);
+            break;
+        case TokenIdFunc:
+        case TokenIdAlias: // already handled in collect phase
+            *expr = nullptr;
+            *rest = tok->next;
+            return nullptr;
+        default:
+            break;
+    }
+    tok = tok->next;
+    if (is_set)
+        node = newNode<Assignment>(NodeAssign, node, parseExpr(tok, rest, expr));
+    else
+        *rest = tok;
+    return node;
+}
+
+Node * Parser::parseProgram(Token *tok, Token **rest, Context *ctx, bool is_block) {
+    if (is_block) tok = skip(tok, TokenIdLBracket, '[');
+    curCtx = ctx;
     Node head{};
     Node *cur = &head;
     Node *node = nullptr;
@@ -685,36 +727,37 @@ Node * Parser::parseProgram(Token *tok, Context *ctx) {
         switch (tok->id)
         {
         // declaration
-        case TokenIdMacroEnum: break;
-        case TokenIdMacroImport: break;
+        case TokenIdMacroEnum:
+        case TokenIdMacroImport:
 
         // statement
-        case TokenIdIf: break;
-        case TokenIdEither: break;
-        case TokenIdCase: break;
-        case TokenIdSwitch: break;
-        case TokenIdWhile: break;
-        case TokenIdUntil: break;
-        case TokenIdLoop: break;
-        case TokenIdReturn: break;
-        case TokenIdExit: break;
-        case TokenIdWith: break;
-        case TokenIdUse: break;
+        case TokenIdIf:
+        case TokenIdEither:
+        case TokenIdCase:
+        case TokenIdSwitch:
+        case TokenIdWhile:
+        case TokenIdUntil:
+        case TokenIdLoop:
+        case TokenIdReturn:
+        case TokenIdExit:
+        case TokenIdWith:
+        case TokenIdUse: tok = tok->next; break;
         case TokenIdSetWord:
-            node = parseSetWord(tok, &tok, &expr);
+            if (tok->next->id == TokenIdContext) {
+                node = parseProgram(tok->next->next, &tok, findContext(tok));
+                curCtx = ctx;
+                break;
+            }
+        // assignment or expression
+        default:
+            node = parseExpr(tok, &tok, &expr);
             if (!expr) continue;
             break;
-        case TokenIdPath:
-            node = parsePath(tok, &tok);
-            break;
-
-        // expression
-        default:
-            node = parseExpr(tok, &tok);
-            break;
         }
-        cur = cur->next = node;
+        if (node)
+            cur = cur->next = node;
     }
+    if (is_block) tok = skip(tok, TokenIdRBracket, ']');
     return head.next;
 }
 
@@ -731,10 +774,13 @@ Program * Parser::parse(Token *tok) {
 //dumpTokens(tok, "After collectDeclarations");
     resolveDeclarations(ctx);
 
-    parseProgram(tok, ctx);
+    Node *ast = parseProgram(tok, &tok, ctx, false);
+
+dumpAst(ast);
 
     program->functions = func.next;
     program->data = global.next;
+    program->ast = ast;
     return program;
 }
 
@@ -748,3 +794,20 @@ void dumpFunction(Function *func) {
     }
     llvm::errs() << '\n';
 }
+
+void dumpAst(Node *node) {
+    uint32_t n = 0;
+    while (node) {
+        switch (node->id)
+        {
+        case NodeAssign: break;
+        case TypeInt: break;
+        default:
+            break;
+        }
+        n++;
+        node = node->next;
+    }
+    llvm::errs() << "Number of AST Node: " << n << '\n';
+}
+

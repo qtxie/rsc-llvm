@@ -35,55 +35,7 @@ enum VarAttr {
 
 // AST node type
 enum NodeId : uint8_t {
-    NodeUndef = 0,
-    TypeVoid = 0,
-    TypeNull,
-    TypeBool,
-    TypeByte,
-    TypeInt,
-    TypeFloat,
-    TypeDouble,
-    TypeEnum,
-    TypePtr,
-    TypeStruct,
-    TypeFunc,
-    TypeBinary,
-    TypeArray,
-    TypeAlias,
-    TypeFuncUnresolved,
-    TypeStructUnresolved,
-    TypeType,
-    NodeAssign,
-    NodeFnCall,
-    NodeVar,
-    NodeMemberAccess,
-    NodeContext,
-    NodePointer,
-    NodeGetAddr,        // :abc
-    NodeOpAdd,          // +
-    NodeOpSub,          // -
-    NodeOpMul,          // *
-    NodeOpDiv,          // /
-    NodeOpAnd,          // and
-    NodeOpOr,           // or
-    NodeOpXor,          // xor
-    NodeOpEq,           // =
-    NodeOpNotEq,        // <>
-    NodeOpLess,         // <
-    NodeOpGreater,      // >
-    NodeOpLessEq,       // <=
-    NodeOpGreaterEq,    // >=
-    NodeNot,
-    NodeAny,
-    NodeAll,
-    NodeReturn,
-    NodeIf,
-    NodeEither,
-    NodeSwitch,
-    NodeCase,
-    NodeWhile,
-    NodeUntil,
-    NodeProgram
+#include "NodeId.def"
 };
 
 // AST Node

@@ -15,6 +15,7 @@ DIAG(err_dangling, Error, "dangling {0}")
 DIAG(err_expected_match, Error, "expected {0} to match this {1}")
 DIAG(err_expected, Error, "expected {0}")
 DIAG(err_expected_arg, Error, "expected {0} but found {1}")
+DIAG(err_expected_type, Error, "expected type {0} but found {1}")
 DIAG(err_invalid_func, Error, "invalid definition for function")
 
 DIAG(err_float_overflow, Error, "float overflow")

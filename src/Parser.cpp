@@ -86,70 +86,34 @@
  * 
  **/
 
-const char * const NodeName[] = {
-    "NodeUndef",
-    "TypeNull",
-    "TypeBool",
-    "TypeByte",
-    "TypeInt",
-    "TypeFloat",
-    "TypeDouble",
-    "TypeEnum",
-    "TypeStruct",
-    "TypePtr",
-    "TypeFunc",
-    "TypeBinary",
-    "TypeArray",
-    "TypeAlias",
-    "TypeFuncUnresolved",
-    "TypeStructUnresolved",
-    "TypeType",
-    "NodeAssign",
-    "NodeFnCall",
-    "NodeVar",
-    "NodeMemberAccess",
-    "NodeContext",
-    "NodePointer",
-    "NodeGetAddr",
-    "NodeOpAdd",
-    "NodeOpSub",
-    "NodeOpMul",
-    "NodeOpDiv",
-    "NodeOpAnd",
-    "NodeOpOr",
-    "NodeOpXor",
-    "NodeOpEq",
-    "NodeOpNotEq",
-    "NodeOpLess",
-    "NodeOpGreater",
-    "NodeOpLessEq",
-    "NodeOpGreaterEq",
-    "NodeNot",
-    "NodeAny",
-    "NodeAll",
-    "NodeReturn",
-    "NodeIf",
-    "NodeEither",
-    "NodeSwitch",
-    "NodeCase",
-    "NodeWhile",
-    "NodeUntil",
-    "NodeProgram",
+static const char * const NodeName[] = {
+    #define NODE(ID, STR) STR,
+    #define TYPE(ID, STR) STR,
+    #include "NodeId.def"
+    nullptr
+};
+
+static const char * const TypeName[] {
+    #define NODE(ID, STR)
+    #define TYPE(ID, STR) STR,
+    #include "NodeId.def"
     nullptr
 };
 
 enum TypeConvResult : uint8_t {
-    tc_fail = 0b0000,    // cannot convert     
-    tc_same = 0b0001,    // same type
-    tc_e_ii = 0b0010,    // int to int: explicit conversion only
-    tc_i_ii = 0b0011,    // int to int: explicit and implicit conversion allowed
-    tc_e_if = 0b0100,    // int to float: explicit conversion only
-    tc_e_ff = 0b1000,    // float to float: explicit conversion only
-    tc_i_ff = 0b1001,    // float to float: explicit and implicit conversion allowed
-    tc_e_fi = 0b1010,    // float to int: explicit conversion only
-    tc_e_xp = 0b1100,    // other types to ptr: explicit conversion only
-    tc_e_px = 0b1101,    // ptr to other types: explicit conversion only
-    tc_e_ss = 0b1110,    // struct to struct
+    tc_same,      // same type
+    tc_i_ii,      // int to int: explicit and implicit conversion allowed
+    tc_i_if,      // int to float: explicit and implicit conversion allowed
+    tc_i_ff,      // @@ make sure it's the last one in this group. float to float: explicit and implicit conversion allowed
+
+    tc_e_ii,      // int to int: explicit conversion only
+    tc_e_if,      // int to float: explicit conversion only
+    tc_e_ff,      // float to float: explicit conversion only
+    tc_e_fi,      // float to int: explicit conversion only
+    tc_e_xp,      // other types to ptr: explicit conversion only
+    tc_e_px,      // ptr to other types: explicit conversion only
+    tc_e_ss,      // struct to struct
+    tc_fail,      // cannot convert
 };
 
 // TypeConv[from][to]
@@ -158,11 +122,11 @@ static const TypeConvResult TypeConv[TypeType][TypeType] = {
     {tc_same, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail},  // From void
     {tc_fail, tc_same, tc_e_ii, tc_e_ii, tc_e_ii, tc_fail, tc_fail, tc_e_ii, tc_same, tc_fail},  // From null
     {tc_fail, tc_fail, tc_same, tc_e_ii, tc_e_ii, tc_fail, tc_fail, tc_e_ii, tc_e_xp, tc_fail},  // From bool
-    {tc_fail, tc_fail, tc_e_ii, tc_same, tc_e_ii, tc_fail, tc_fail, tc_e_ii, tc_e_xp, tc_fail},  // From byte
-    {tc_fail, tc_fail, tc_e_ii, tc_e_ii, tc_same, tc_e_if, tc_e_if, tc_e_ii, tc_e_xp, tc_fail},  // From i32
+    {tc_fail, tc_fail, tc_e_ii, tc_same, tc_i_ii, tc_fail, tc_fail, tc_e_ii, tc_e_xp, tc_fail},  // From byte
+    {tc_fail, tc_fail, tc_e_ii, tc_e_ii, tc_same, tc_e_if, tc_i_if, tc_e_ii, tc_e_xp, tc_fail},  // From i32
     {tc_fail, tc_fail, tc_fail, tc_fail, tc_e_fi, tc_same, tc_i_ff, tc_e_fi, tc_fail, tc_fail},  // From f32
     {tc_fail, tc_fail, tc_fail, tc_fail, tc_e_fi, tc_e_ff, tc_same, tc_e_fi, tc_fail, tc_fail},  // From f64
-    {tc_fail, tc_fail, tc_e_ii, tc_e_ii, tc_same, tc_e_if, tc_e_if, tc_same, tc_e_xp, tc_fail},  // From enum
+    {tc_fail, tc_fail, tc_e_ii, tc_e_ii, tc_i_ii, tc_e_if, tc_e_if, tc_same, tc_e_xp, tc_fail},  // From enum
     {tc_fail, tc_fail, tc_e_px, tc_e_px, tc_e_px, tc_fail, tc_fail, tc_fail, tc_same, tc_fail},  // From ptr
     {tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_e_ss},  // From struct
 };
@@ -754,9 +718,9 @@ Node * Parser::checkArgType(Node *arg, Type *expected) {
         ty = ((Variable *)arg)->type;
     }
     llvm::errs() << "check type: " << NodeName[ty->id] << " " << NodeName[expected->id] << '\n';
-    const auto res = TypeConv[ty->id][expected->id];
-    if (res == tc_fail)
-        comp.error(arg->tok, err_type_not_compatible);
+    const auto res = (ty->id == expected->id) ? tc_same : TypeConv[ty->id][expected->id];
+    if (res > tc_i_ff)
+        comp.error(arg->tok, err_expected_type, TypeName[expected->id], TypeName[ty->id]);
     return arg;
 }
 

@@ -1,0 +1,59 @@
+#ifndef NODE
+#define NODE(ID, STR) Node ## ID,
+#endif
+#ifndef TYPE
+#define TYPE(ID, STR) Type ## ID,
+#endif
+
+TYPE(Void,               "void!")
+TYPE(Null,               "null!")
+TYPE(Bool,               "logic!")
+TYPE(Byte,               "byte!")
+TYPE(Int,                "integer!")
+TYPE(Float,              "float32!")
+TYPE(Double,             "float64!")
+TYPE(Enum,               "enum!")
+TYPE(Ptr,                "pointer!")
+TYPE(Struct,             "struct!")
+TYPE(Func,               "function!")
+TYPE(Binary,             "binary!")
+TYPE(Array,              "array!")
+TYPE(Alias,              "alias!")
+TYPE(FuncUnresolved,     "unresolved-func")
+TYPE(StructUnresolved,   "unresolved-struct")
+TYPE(Type,               "anytype!")
+
+NODE(Assign,             "assignment")
+NODE(FnCall,             "func-call")
+NODE(Var,                "variable")
+NODE(MemberAccess,       "member-access")
+NODE(Context,            "context")
+NODE(Pointer,            "pointer")
+NODE(GetAddr,            "get-address")
+NODE(Add,                "+")
+NODE(Sub,                "-")
+NODE(Mul,                "*")
+NODE(Div,                "/")
+NODE(And,                "and")
+NODE(Or,                 "or")
+NODE(Xor,                "xor")
+NODE(Eq,                 "=")
+NODE(NotEq,              "<>")
+NODE(Less,               "<")
+NODE(Greater,            ">")
+NODE(LessEq,             "<=")
+NODE(GreaterEq,          ">=")
+NODE(Not,                "not")
+NODE(Any,                "any")
+NODE(All,                "all")
+NODE(Return,             "return")
+NODE(If,                 "if")
+NODE(Either,             "either")
+NODE(Switch,             "switch")
+NODE(Case,               "case")
+NODE(While,              "while")
+NODE(Until,              "until")
+NODE(Program,            "program")
+
+#undef TYPE
+#undef NODE

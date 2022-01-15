@@ -86,6 +86,87 @@
  * 
  **/
 
+const char * const NodeName[] = {
+    "NodeUndef",
+    "TypeNull",
+    "TypeBool",
+    "TypeByte",
+    "TypeInt",
+    "TypeFloat",
+    "TypeDouble",
+    "TypeEnum",
+    "TypeStruct",
+    "TypePtr",
+    "TypeFunc",
+    "TypeBinary",
+    "TypeArray",
+    "TypeAlias",
+    "TypeFuncUnresolved",
+    "TypeStructUnresolved",
+    "TypeType",
+    "NodeAssign",
+    "NodeFnCall",
+    "NodeVar",
+    "NodeMemberAccess",
+    "NodeContext",
+    "NodePointer",
+    "NodeGetAddr",
+    "NodeOpAdd",
+    "NodeOpSub",
+    "NodeOpMul",
+    "NodeOpDiv",
+    "NodeOpAnd",
+    "NodeOpOr",
+    "NodeOpXor",
+    "NodeOpEq",
+    "NodeOpNotEq",
+    "NodeOpLess",
+    "NodeOpGreater",
+    "NodeOpLessEq",
+    "NodeOpGreaterEq",
+    "NodeNot",
+    "NodeAny",
+    "NodeAll",
+    "NodeReturn",
+    "NodeIf",
+    "NodeEither",
+    "NodeSwitch",
+    "NodeCase",
+    "NodeWhile",
+    "NodeUntil",
+    "NodeProgram",
+    nullptr
+};
+
+enum TypeConvResult : uint8_t {
+    tc_fail = 0b0000,    // cannot convert     
+    tc_same = 0b0001,    // same type
+    tc_e_ii = 0b0010,    // int to int: explicit conversion only
+    tc_i_ii = 0b0011,    // int to int: explicit and implicit conversion allowed
+    tc_e_if = 0b0100,    // int to float: explicit conversion only
+    tc_e_ff = 0b1000,    // float to float: explicit conversion only
+    tc_i_ff = 0b1001,    // float to float: explicit and implicit conversion allowed
+    tc_e_fi = 0b1010,    // float to int: explicit conversion only
+    tc_e_xp = 0b1100,    // other types to ptr: explicit conversion only
+    tc_e_px = 0b1101,    // ptr to other types: explicit conversion only
+    tc_e_ss = 0b1110,    // struct to struct
+};
+
+// TypeConv[from][to]
+static const TypeConvResult TypeConv[TypeType][TypeType] = {
+// To: void    null     bool     byte     i32      f32      f64      enum     ptr     struct
+    {tc_same, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail},  // From void
+    {tc_fail, tc_same, tc_e_ii, tc_e_ii, tc_e_ii, tc_fail, tc_fail, tc_e_ii, tc_same, tc_fail},  // From null
+    {tc_fail, tc_fail, tc_same, tc_e_ii, tc_e_ii, tc_fail, tc_fail, tc_e_ii, tc_e_xp, tc_fail},  // From bool
+    {tc_fail, tc_fail, tc_e_ii, tc_same, tc_e_ii, tc_fail, tc_fail, tc_e_ii, tc_e_xp, tc_fail},  // From byte
+    {tc_fail, tc_fail, tc_e_ii, tc_e_ii, tc_same, tc_e_if, tc_e_if, tc_e_ii, tc_e_xp, tc_fail},  // From i32
+    {tc_fail, tc_fail, tc_fail, tc_fail, tc_e_fi, tc_same, tc_i_ff, tc_e_fi, tc_fail, tc_fail},  // From f32
+    {tc_fail, tc_fail, tc_fail, tc_fail, tc_e_fi, tc_e_ff, tc_same, tc_e_fi, tc_fail, tc_fail},  // From f64
+    {tc_fail, tc_fail, tc_e_ii, tc_e_ii, tc_same, tc_e_if, tc_e_if, tc_same, tc_e_xp, tc_fail},  // From enum
+    {tc_fail, tc_fail, tc_e_px, tc_e_px, tc_e_px, tc_fail, tc_fail, tc_fail, tc_same, tc_fail},  // From ptr
+    {tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_e_ss},  // From struct
+};
+
 Node * Parser::addVar(Token *name, Node *node) {
     auto& vars = curCtx->vars;
     auto const & [keyval, is_new] = vars.insert({name->str(), node});
@@ -172,10 +253,10 @@ const Type * Parser::parseType(Token *tok, Token **rest, bool is_block, bool is_
     const Type *type = findType(tok, &ctx);
     if (type) {  // alias type
         tok = tok->next;
-        if (!is_collect && tok->id == TokenIdWord && tok->equals("value")) {
+        if (type->id == TypeStructUnresolved && !is_collect && tok->id == TokenIdWord && tok->equals("value")) { // struct value
             resolveStruct((Type *)type, ctx);
             tok = tok->next;
-        } else if (!is_collect) {
+        } else if (type->id > TypePtr && !is_collect) {
             type = (Type *)newPtrType(type);
         }
     } else {     // anonymous type
@@ -280,7 +361,7 @@ Token *Parser::parseFuncSpec(Token *tok, Function *func, bool is_collect) {
         }
     }
     func->params = params.next;
-    func->id = TypeFuncBodyUnresolved;
+    func->id = TypeFunc;
 
     return tok->next;
 }
@@ -665,6 +746,38 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
     return node;
 }
 
+Node * Parser::checkArgType(Node *arg, Type *expected) {
+    assert(arg && expected);
+
+    Type *ty = (Type *)arg;
+    if (arg->id == NodeVar) {
+        ty = ((Variable *)arg)->type;
+    }
+    llvm::errs() << "check type: " << NodeName[ty->id] << " " << NodeName[expected->id] << '\n';
+    const auto res = TypeConv[ty->id][expected->id];
+    if (res == tc_fail)
+        comp.error(arg->tok, err_type_not_compatible);
+    return arg;
+}
+
+Node * Parser::parseFnCall(Function *fn, Token *tok, Token **rest) {
+    auto call = newNode<FnCall>(NodeFnCall, tok);
+    call->fn = fn;
+    Node head{};
+    Node *cur = &head;
+    auto param = fn->params;
+    for (int n = fn->n_params; n; n--) {
+        Node *expr = nullptr;
+        auto arg = parseExpr(tok->next, &tok, &expr);
+        if (!expr) comp.error(tok, err_type_not_compatible);
+        cur = cur->next = checkArgType(arg, (Type *)param);
+        param = param->next;
+    }
+    call->args = head.next;
+    *rest = tok;
+    return call;
+}
+
 Node * Parser::parseExpr(Token *tok, Token **rest, Node **expr) {
     Context *ctx = nullptr;
     Node *node = nullptr;
@@ -684,8 +797,16 @@ Node * Parser::parseExpr(Token *tok, Token **rest, Node **expr) {
             break;
         case TokenIdWord:
             node = findVar(tok, &ctx);
-            if (!node)
-                comp.error(tok, err_undeclared_name, tok->str());
+            llvm::errs() << "node: " << node << '\n'; 
+            if (!node) {
+                node = findDecl(tok, &ctx);
+                if (!node) comp.error(tok, err_undeclared_name, tok->str());
+            }
+            llvm::errs() << "node: " << NodeName[node->id] << '\n'; 
+            if (node->id == TypeFunc) {
+                node = parseFnCall((Function *)node, tok, &tok);
+            }
+            break;
 
         case TokenIdInteger:
         case TokenIdHex:
@@ -700,19 +821,18 @@ Node * Parser::parseExpr(Token *tok, Token **rest, Node **expr) {
             if (tok->toDouble(ty->data.fvalue))
                 comp.error(tok, err_float_overflow);
             break;
-        case TokenIdFunc:
-        case TokenIdAlias: // already handled in collect phase
-            *expr = nullptr;
-            *rest = tok->next;
-            return nullptr;
+        case TokenIdFunc:  // anonymous function
+        case TokenIdAlias:
         default:
             break;
     }
-    tok = tok->next;
-    if (is_set)
-        node = newNode<Assignment>(NodeAssign, node, parseExpr(tok, rest, expr));
-    else
+
+    if (is_set) {
+        node = newNode<Assignment>(NodeAssign, node, parseExpr(tok->next, rest, expr));
+    } else {
+        *expr = node;
         *rest = tok;
+    }
     return node;
 }
 
@@ -743,14 +863,25 @@ Node * Parser::parseProgram(Token *tok, Token **rest, Context *ctx, bool is_bloc
         case TokenIdWith:
         case TokenIdUse: tok = tok->next; break;
         case TokenIdSetWord:
-            if (tok->next->id == TokenIdContext) {
+            switch (tok->next->id)
+            {
+            case TokenIdContext:
                 node = parseProgram(tok->next->next, &tok, findContext(tok));
                 curCtx = ctx;
                 break;
+            case TokenIdFunc:   // already handled in collect phase
+            case TokenIdAlias:
+                tok = tok->next->next;
+                continue;
+            default:
+                break;
             }
+            break;
+
         // assignment or expression
         default:
             node = parseExpr(tok, &tok, &expr);
+            tok = tok->next;
             if (!expr) continue;
             break;
         }
@@ -771,7 +902,7 @@ Program * Parser::parse(Token *tok) {
     curGlobal = &global;
 
     tok = collectDeclarations(tok, ctx);
-//dumpTokens(tok, "After collectDeclarations");
+dumpTokens(tok, "After collectDeclarations");
     resolveDeclarations(ctx);
 
     Node *ast = parseProgram(tok, &tok, ctx, false);
@@ -798,6 +929,7 @@ void dumpFunction(Function *func) {
 void dumpAst(Node *node) {
     uint32_t n = 0;
     while (node) {
+        llvm::errs() << NodeName[node->id] << "\n";
         switch (node->id)
         {
         case NodeAssign: break;
@@ -810,4 +942,3 @@ void dumpAst(Node *node) {
     }
     llvm::errs() << "Number of AST Node: " << n << '\n';
 }
-

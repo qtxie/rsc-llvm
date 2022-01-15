@@ -35,8 +35,8 @@ enum VarAttr {
 
 // AST node type
 enum NodeId : uint8_t {
-    NodeUndef,
-    TypeVoid,
+    NodeUndef = 0,
+    TypeVoid = 0,
     TypeNull,
     TypeBool,
     TypeByte,
@@ -44,18 +44,17 @@ enum NodeId : uint8_t {
     TypeFloat,
     TypeDouble,
     TypeEnum,
-    TypeBinary,
     TypePtr,
-    TypeFuncUnresolved,
-    TypeFuncBodyUnresolved,
-    TypeFunc,
-    TypeArray,
-    TypeStructUnresolved,
     TypeStruct,
+    TypeFunc,
+    TypeBinary,
+    TypeArray,
     TypeAlias,
+    TypeFuncUnresolved,
+    TypeStructUnresolved,
     TypeType,
     NodeAssign,
-    NodeFuncCall,
+    NodeFnCall,
     NodeVar,
     NodeMemberAccess,
     NodeContext,
@@ -164,6 +163,11 @@ struct MemberAccess : Node {
     Node *member;
 };
 
+struct FnCall : Node {
+    Function *fn;
+    Node *args;
+};
+
 struct If : Node {
 
 };
@@ -218,7 +222,10 @@ private:
 
     Unary *getStructMember(Unary *st, Token *tok);
 
+    Node * checkArgType(Node *arg, Type *expected);
+
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
+    Node * parseFnCall(Function *fn, Token *tok, Token **rest);
     Node * parseExpr(Token *tok, Token **rest, Node **expr);
     Token * parseLocal(Token *tok, Function *func);
     Token * parseFuncSpec(Token *tok, Function *func, bool is_collect = false);

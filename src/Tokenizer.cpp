@@ -344,10 +344,10 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
 
         case ';':
             // Skip line comments
-            // NOTE: we don't bother with \r as the line break as it's rarely used now
+            // NOTE: we don't bother with \r as it's rarely used as line break nowadays
             // OSX, Linux: \n
             // Windows: \r\n
-            while (*p != '\n') p++;
+            while (*p != '\n' && *p) p++;
             continue;
 
         case '"': {

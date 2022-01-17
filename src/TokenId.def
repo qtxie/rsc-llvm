@@ -37,6 +37,7 @@ DELIMITER(LBracket,          "[")
 DELIMITER(RBracket,          "]")
 DELIMITER(LParen,            "(")
 DELIMITER(RParen,            ")")
+DELIMITER(Slash,             "/")     // when attach to previous symbol
 
 TOK(Eof)                 // End of file.
 TOK(Directive)
@@ -61,9 +62,9 @@ TOK(MultilineString)     // {abc}
 TOK(File)                // %abc.reds
 TOK(Binary)              // #{ABCD}
 
+OPERATOR(BinOpBegin,         "bin-op-begin")
 OPERATOR(Plus,               "+")
 OPERATOR(Minus,              "-")
-OPERATOR(Slash,              "/")     // when attach to previous symbol
 OPERATOR(Div,                "/")
 OPERATOR(Modulo,             "//")
 OPERATOR(Remainder,          "%")
@@ -79,6 +80,8 @@ KEYWORD(Greater,             ">")
 KEYWORD(GreaterEqual,        ">=")
 KEYWORD(ShiftRight,          ">>")
 KEYWORD(ShiftRightLogical,   ">>>")
+OPERATOR(BinOpEnd,           "bin-op-end")
+
 KEYWORD(Alias,               "alias")
 KEYWORD(All,                 "all")
 KEYWORD(And,                 "and")

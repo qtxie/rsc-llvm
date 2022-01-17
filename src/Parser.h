@@ -100,6 +100,10 @@ struct Variable : Node {
     int offset;     // for local variable
 };
 
+struct Identifier: Node {
+    Variable *var;
+};
+
 struct BinaryOp : Node {
     Node *lhs;
     Node *rhs;
@@ -121,11 +125,14 @@ struct FnCall : Node {
 };
 
 struct If : Node {
-
+    Node *cond;
+    Node *body;
 };
 
 struct Either : Node {
-
+    Node *cond;
+    Node *then_body;
+    Node *els_body;
 };
 
 struct Context : Node {
@@ -163,9 +170,7 @@ public:
     Program *parse(Token *tok);
 
 private:
-    // add variable if and only if it's not in the hashmap.
-    // return the variable if it's already in the hashmap.
-    Node * addVar(Token * name, Node *node);
+    Variable * addVar(Context *ctx, Token * name, bool is_local = false);
     void addDecl(Context *ctx, Token * name, Node *node);
     Context * findContext(Token *tok);
     Variable * findVar(Token * name, Context **ctx_out);
@@ -177,8 +182,10 @@ private:
     Node * checkArgType(Node *arg, Type *expected);
 
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
+    Node * parseIf(Token *tok, Token **rest);
     Node * parseFnCall(Function *fn, Token *tok, Token **rest);
-    Node * parseExpr(Token *tok, Token **rest, Node **expr);
+    Node * parseAssignment(Token *tok, Token **rest);
+    Node * parseExpr(Token *tok, Token **rest);
     Token * parseLocal(Token *tok, Function *func);
     Token * parseFuncSpec(Token *tok, Function *func, bool is_collect = false);
     Token * parseEnum(Token *tok, Context *ctx);
@@ -186,13 +193,16 @@ private:
     Node * parseMembers(Token *tok, Token **rest);
     Type * parseStruct(Token *tok, Token **rest, bool is_collect = false);
     Node * parsePath(Token *tok, Token **rest, bool &is_setpath);
-    Node * parseProgram(Token *tok, Token **rest, Context *ctx, bool is_block = true);
+    Node * parseBinaryOp(Node *lhs, Token *tok, Token **rest);
+    Node * parseCode(Token *tok, Token **rest, Context *ctx, bool is_block = true);
+    Node * parseProgram(Token *tok, Context *ctx, bool is_func_body = false);
+    void parseFunctions(Context *ctx);
 
     const Type * collectType(Token *tok, Token **rest) {
         return parseType(tok, rest, false, true);
     }
     Node * collectDecl(Token *tok, Token **rest);
-    Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = false);
+    Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = true, bool is_func_ctx = false);
 
     bool resolveStruct(Type *ty, Context *ctx);
     void resolveDeclarations(Context *ctx);
@@ -239,6 +249,6 @@ private:
 };
 
 void dumpFunction(Function *func);
-void dumpAst(Node *node);
+void dumpAst(Node *node, uint32_t level = 0);
 
 #endif /* RED_SYSTEM_PARSER_H */

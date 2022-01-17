@@ -10,7 +10,7 @@
 
 /** Grammar
  * 
- *  program           = (declaration | statement | expression)*
+ *  code              = (declaration | statement | expression)*
  * 
  *  declaration       = (word: (function-decl | context-decl | alias-decl)) | syscall | import | enum
  *  function-decl     = ("func" | "function") func-spec-block body-block
@@ -21,7 +21,7 @@
  *  enum              = "#enum" word "[" (word | (word:+ integer))+ "]"
  * 
  *  func-spec-block   = "[" func-attrs-block? doc-string? param* return-spec? ("/local" local-var+)? "]"
- *  body-block        = "[" (word: alias-decl) | import | enum | statement | expression)* "]"
+ *  body-block        = "[" (word: alias-decl) | syscall | import | enum | statement | expression)* "]"
  *  func-attrs-block  = "[" "infix" | "catch" | "callback" | "custom" | "stdcall" | "cdecl" (variadic | typed)? "]"
  *  param             = typed-word doc-string?
  *  typed-word        = word "[" type "]"
@@ -131,10 +131,13 @@ static const TypeConvResult TypeConv[TypeType][TypeType] = {
     {tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_e_ss},  // From struct
 };
 
-Node * Parser::addVar(Token *name, Node *node) {
-    auto& vars = curCtx->vars;
+Variable * Parser::addVar(Context *ctx, Token *name, bool is_local) {
+    auto node = newNode<Variable>(NodeVar, name);
+    auto& vars = ctx->vars;
     auto const & [keyval, is_new] = vars.insert({name->str(), node});
-    return keyval->second;
+    if (!is_new && is_local)
+        comp.error(name, err_symbol_declared, name);
+    return node;
 }
 
 void Parser::addDecl(Context *ctx, Token *name, Node *node) {
@@ -319,7 +322,7 @@ Token *Parser::parseFuncSpec(Token *tok, Function *func, bool is_collect) {
         } else if (state < Local && tok->id == TokenIdRefinement && tok->equals("local")) {
             //local-var = word+ ("[" type "]")?
             state = Local;
-            tok = parseLocal(tok->next->next, func);
+            tok = parseLocal(tok->next, func);
         } else {
             comp.error(tok, err_invalid_func);
         }
@@ -415,7 +418,7 @@ Node * Parser::collectDecl(Token *tok, Token **rest) {
         ctx->parent = curCtx;
         curCtx = ctx;
         expect(tok->next, TokenIdLBracket, '[');
-        *rest = collectDeclarations(tok->next, ctx, true);
+        *rest = collectDeclarations(tok->next, ctx);
         curCtx = ctx->parent;
         return ctx;
     }
@@ -515,6 +518,38 @@ void Parser::resolveDeclarations(Context *ctx) {
     }
 }
 
+void Parser::parseFunctions(Context *ctx) {
+    curCtx = ctx;
+    for (auto const &val : ctx->decls) {
+        Type *ty = (Type *)val.second;
+        if (ty->id == TypeFunc && ty->tid == 0) {
+            ty->tid = curTypeId++;
+            Context fn_ctx = {};
+            fn_ctx.parent = ctx;
+
+            Function *fn = (Function *)ty;
+
+            // add params and local variables in function context
+            auto add_into_fn_ctx = [this, &fn_ctx](Node *node) {
+                while (node) {
+                    auto var = addVar(&fn_ctx, node->tok, true);
+                    var->type = (Type *)node;
+                    node = node->next;
+                }
+            };
+            add_into_fn_ctx(fn->params);
+            add_into_fn_ctx(fn->locals);
+    
+            fn->body.node = parseProgram(fn->body.token, &fn_ctx, true);
+            curCtx = ctx;
+
+        } else if (ty->id == NodeContext) {
+            parseFunctions((Context* )ty);
+            curCtx = ctx;
+        }
+    }
+}
+
 // import = "#import" "[" library-functions* "]"
 // library-functions = string ("stdcall" | "cdecl") "[" (word: string spec-block)* "]"
 Token * Parser::parseImport(Token *tok, Context *ctx) {
@@ -558,7 +593,7 @@ Token * Parser::parseImport(Token *tok, Context *ctx) {
 
 // 1. Collect function, import function, alias, context and enum
 // 2. Recognize path! and get-path!
-Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
+Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block, bool is_func_ctx) {
     SmallVector<std::pair<Token *, uint32_t>> bracket;
     SmallVector<std::pair<Token *, uint32_t>> paren;
     Token head = {};
@@ -611,6 +646,7 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block) {
                     }
                     if (is_block) {
                         cur->next = tok;
+                        if (is_func_ctx) return head.next;
                         return tok->next;
                     }
                 }
@@ -731,10 +767,8 @@ Node * Parser::parseFnCall(Function *fn, Token *tok, Token **rest) {
     Node *cur = &head;
     auto param = fn->params;
     for (int n = fn->n_params; n; n--) {
-        Node *expr = nullptr;
-        auto arg = parseExpr(tok->next, &tok, &expr);
-        if (!expr) comp.error(tok, err_type_not_compatible);
-        cur = cur->next = checkArgType(arg, (Type *)param);
+        auto arg = parseExpr(tok->next, &tok);
+        cur = cur->next = arg; //checkArgType(arg, (Type *)param);
         param = param->next;
     }
     call->args = head.next;
@@ -742,27 +776,56 @@ Node * Parser::parseFnCall(Function *fn, Token *tok, Token **rest) {
     return call;
 }
 
-Node * Parser::parseExpr(Token *tok, Token **rest, Node **expr) {
+Node * Parser::parseBinaryOp(Node *lhs, Token *tok, Token **rest) {
+    // map TokenId to NodeId
+    static const NodeId bin_ops[] = {
+        // +        -          /        //           %
+        NodeAdd, NodeSub, NodeDiv, NodeModulo, NodeRemainder,
+        // *        <          <<            <=          <>
+        NodeMul, NodeLess, NodeShiftLeft, NodeLessEq, NodeNotEq,
+        // =        >          >=            >>                >>>
+        NodeEq, NodeGreater, NodeGreaterEq, NodeShiftRight, NodeShiftRightLogical
+    };
+
+    BinaryOp *node = nullptr;
+    while (true) {
+        auto tok_id = tok->next->id;
+        NodeId node_id;
+        bool is_bin_op = true;
+        if (tok_id > TokenIdBinOpBegin && tok_id < TokenIdBinOpEnd)
+            node_id = bin_ops[tok_id - TokenIdBinOpBegin - 1];
+        else if (tok_id == TokenIdAnd)
+            node_id = NodeAnd;
+        else if (tok_id == TokenIdOr)
+            node_id = NodeOr;
+        else if (tok_id == TokenIdXor)
+            node_id = NodeXor;
+        //else if (tok_id == TokenIdWord) // TBD: check infix func
+        else is_bin_op = false;
+
+        if (is_bin_op) {
+            node = newNode<BinaryOp>(node_id, lhs, parseExpr(tok->next->next, &tok));
+            lhs = node;
+        } else {
+            break;
+        }
+    }
+    *rest = tok;
+    return node ? node : lhs;
+}
+
+Node * Parser::parseExpr(Token *tok, Token **rest) {
     Context *ctx = nullptr;
     Node *node = nullptr;
     Type *ty;
-    bool is_set = false;
     switch (tok->id) {
-        case TokenIdSetWord:
-            node = findVar(tok, &ctx);
-            if (!node) {
-                node = newNode<Variable>(NodeVar, tok);
-                addVar(tok, node);
-            }
-            is_set = true;
-            break;
-        case TokenIdPath:
-            node = parsePath(tok, &tok, is_set);
-            break;
         case TokenIdWord:
             node = findVar(tok, &ctx);
-            llvm::errs() << "node: " << node << '\n'; 
-            if (!node) {
+            if (node) {
+                auto ident = newNode<Identifier>(NodeIdent, tok);
+                ident->var = (Variable *)node;
+                node = ident;
+            } else {
                 node = findDecl(tok, &ctx);
                 if (!node) comp.error(tok, err_undeclared_name, tok->str());
             }
@@ -785,29 +848,57 @@ Node * Parser::parseExpr(Token *tok, Token **rest, Node **expr) {
             if (tok->toDouble(ty->data.fvalue))
                 comp.error(tok, err_float_overflow);
             break;
+        case TokenIdLParen:
+            node = parseExpr(tok->next, &tok);
+            tok = tok->next;
+            expect(tok, TokenIdRParen, ')');
+            break;
         case TokenIdFunc:  // anonymous function
         case TokenIdAlias:
         default:
             break;
     }
 
-    if (is_set) {
-        node = newNode<Assignment>(NodeAssign, node, parseExpr(tok->next, rest, expr));
-    } else {
-        *expr = node;
-        *rest = tok;
-    }
+    if (node) node = parseBinaryOp(node, tok, &tok);
+    *rest = tok;
     return node;
 }
 
-Node * Parser::parseProgram(Token *tok, Token **rest, Context *ctx, bool is_block) {
+// assignment = lh-side+ expression
+Node * Parser::parseAssignment(Token *tok, Token **rest) {
+    Context *ctx = nullptr;
+    Node *node = nullptr;
+    bool is_set = false;
+    if (tok->id == TokenIdSetWord) {
+        node = findVar(tok, &ctx);
+        if (!node) node = addVar(curCtx, tok);
+        is_set = true;
+    } else if (tok->id == TokenIdPath) {
+        node = parsePath(tok, &tok, is_set);
+    } else {
+        node = parseExpr(tok, rest);
+    }
+
+    if (is_set)
+        node = newNode<Assignment>(NodeAssign, node, parseAssignment(tok->next, rest));
+    return node;
+}
+
+// if-stmt = "if" cond-expr body-block
+Node * Parser::parseIf(Token *tok, Token **rest) {
+    auto node = newNode<If>(NodeIf, tok);
+    node->cond = parseExpr(tok->next, &tok);
+    node->body = parseCode(tok->next, rest, curCtx);
+    return node;
+}
+
+Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) {
     if (is_block) tok = skip(tok, TokenIdLBracket, '[');
     curCtx = ctx;
     Node head{};
     Node *cur = &head;
-    Node *node = nullptr;
-    Node *expr = nullptr;
     while (tok->id != TokenIdEof) {
+        Node *node = nullptr;
         switch (tok->id)
         {
         // declaration
@@ -815,7 +906,7 @@ Node * Parser::parseProgram(Token *tok, Token **rest, Context *ctx, bool is_bloc
         case TokenIdMacroImport:
 
         // statement
-        case TokenIdIf:
+        case TokenIdIf: node = parseIf(tok, &tok); break;
         case TokenIdEither:
         case TokenIdCase:
         case TokenIdSwitch:
@@ -826,11 +917,16 @@ Node * Parser::parseProgram(Token *tok, Token **rest, Context *ctx, bool is_bloc
         case TokenIdExit:
         case TokenIdWith:
         case TokenIdUse: tok = tok->next; break;
+        case TokenIdRBracket:
+            if (is_block) {
+                *rest = tok->next;
+                return head.next;
+            }
         case TokenIdSetWord:
             switch (tok->next->id)
             {
             case TokenIdContext:
-                node = parseProgram(tok->next->next, &tok, findContext(tok));
+                node = parseCode(tok->next->next, &tok, findContext(tok));
                 curCtx = ctx;
                 break;
             case TokenIdFunc:   // already handled in collect phase
@@ -840,42 +936,56 @@ Node * Parser::parseProgram(Token *tok, Token **rest, Context *ctx, bool is_bloc
             default:
                 break;
             }
-            break;
-
         // assignment or expression
         default:
-            node = parseExpr(tok, &tok, &expr);
+            node = parseAssignment(tok, &tok);
             tok = tok->next;
-            if (!expr) continue;
             break;
         }
         if (node)
             cur = cur->next = node;
     }
-    if (is_block) tok = skip(tok, TokenIdRBracket, ']');
+    *rest = tok;
     return head.next;
+}
+
+Node * Parser::parseProgram(Token *tok, Context *ctx, bool is_func_body) {
+llvm::errs() << "====== ParseProgram start =======\n";
+
+    curCtx = ctx;
+    tok = collectDeclarations(tok, ctx, is_func_body, is_func_body);
+
+dumpTokens(tok, "After collectDeclarations");
+
+    resolveDeclarations(ctx);
+
+llvm::errs() << "parseCode start =======\n";
+
+    Node *ast = parseCode(tok, &tok, ctx, is_func_body);
+
+dumpAst(ast);
+
+    parseFunctions(ctx);
+    curCtx = ctx;
+
+llvm::errs() << "======= ParseProgram end =======\n";
+
+    return ast;
 }
 
 Program * Parser::parse(Token *tok) {
     Program *program = newNode<Program>(NodeProgram, tok);
     Context *ctx = newContext(tok);
-    program->ctx = curCtx = ctx;
+    program->ctx = ctx;
     Node func{};
     Node global{};
     curFunc = &func;
     curGlobal = &global;
 
-    tok = collectDeclarations(tok, ctx);
-dumpTokens(tok, "After collectDeclarations");
-    resolveDeclarations(ctx);
-
-    Node *ast = parseProgram(tok, &tok, ctx, false);
-
-dumpAst(ast);
+    program->ast = parseProgram(tok, ctx);
 
     program->functions = func.next;
     program->data = global.next;
-    program->ast = ast;
     return program;
 }
 
@@ -884,25 +994,68 @@ void dumpFunction(Function *func) {
     llvm::errs() << "Params: " << func->n_params << " ";
     auto p = func->params;
     while (p) {
-        llvm::errs() << p->tok->str() << " ";
+        llvm::errs() << p->tok->str() << ": " << TypeName[p->id] << " ";
+        p = p->next;
+    }
+    llvm::errs() << "\nLocals: " << func->n_locals << " ";
+    p = func->locals;
+    while (p) {
+        llvm::errs() << p->tok->str() << ": " << TypeName[p->id] << " ";
         p = p->next;
     }
     llvm::errs() << '\n';
 }
 
-void dumpAst(Node *node) {
+static void dumpBinOp(Node *node) {
+    BinaryOp *op = (BinaryOp *)node;
+    dumpAst(op->lhs, 1);
+    llvm::errs() << " " << NodeName[op->id] << " ";
+    dumpAst(op->rhs, 1);
+}
+
+void dumpAst(Node *node, uint32_t level) {
+    using llvm::errs;
+    auto indent = [level]{
+        uint32_t n = level; 
+        while (n--) errs() << "  ";
+    };
+
+    if (level == 0) errs() << "+++++++++++dump AST+++++++++++" << "\n";
     uint32_t n = 0;
     while (node) {
-        llvm::errs() << NodeName[node->id] << "\n";
+        // errs() << NodeName[node->id] << "--";
         switch (node->id)
         {
         case NodeAssign: break;
-        case TypeInt: break;
+        case NodeIf: 
+            indent();
+            errs() << "If Statement:\n";
+            errs() << "Conditional: ";
+            dumpAst(((If *)node)->cond, level + 1);
+            errs() << "\nBody: ";
+            dumpAst(((If *)node)->body, level + 1);
+            errs() << '\n';
+            break;
+        case TypeInt: 
+            errs() << node->tok->str();
+            break;
+
+        case NodeAdd:
+        case NodeSub:
+            dumpBinOp(node);
+            break;
+        case NodeIdent:
+            errs() << node->tok->str();
+            break;
+        case NodeFnCall:
+            errs() << "call: " << node->tok->str();
+            dumpAst(((FnCall *)node)->args, level + 1);
+            break;
         default:
             break;
         }
         n++;
         node = node->next;
     }
-    llvm::errs() << "Number of AST Node: " << n << '\n';
+    if (level == 0) errs() << "\nNumber of AST Node: " << n << '\n';
 }

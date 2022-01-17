@@ -892,6 +892,12 @@ Node * Parser::parseIf(Token *tok, Token **rest) {
     return node;
 }
 
+Node * Parser::parseReturn(Token *tok, Token **rest) {
+    auto node = newNode<Return>(NodeReturn, tok);
+    node->expr = parseExpr(tok->next, rest);
+    return node;
+}
+
 Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) {
     if (is_block) tok = skip(tok, TokenIdLBracket, '[');
     curCtx = ctx;
@@ -913,13 +919,14 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
         case TokenIdWhile:
         case TokenIdUntil:
         case TokenIdLoop:
-        case TokenIdReturn:
+        case TokenIdReturn: node = parseReturn(tok, &tok); break;
+
         case TokenIdExit:
         case TokenIdWith:
         case TokenIdUse: tok = tok->next; break;
         case TokenIdRBracket:
             if (is_block) {
-                *rest = tok->next;
+                *rest = tok;
                 return head.next;
             }
         case TokenIdSetWord:
@@ -939,9 +946,9 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
         // assignment or expression
         default:
             node = parseAssignment(tok, &tok);
-            tok = tok->next;
             break;
         }
+        tok = tok->next;
         if (node)
             cur = cur->next = node;
     }
@@ -1006,22 +1013,24 @@ void dumpFunction(Function *func) {
     llvm::errs() << '\n';
 }
 
-static void dumpBinOp(Node *node) {
+static void dumpBinOp(Node *node, DumpState s) {
     BinaryOp *op = (BinaryOp *)node;
-    dumpAst(op->lhs, 1);
-    llvm::errs() << " " << NodeName[op->id] << " ";
-    dumpAst(op->rhs, 1);
+    dumpAst(op->lhs, s);
+    llvm::errs() << NodeName[op->id] << " ";
+    dumpAst(op->rhs, s);
 }
 
-void dumpAst(Node *node, uint32_t level) {
+void dumpAst(Node *node, DumpState s) {
     using llvm::errs;
-    auto indent = [level]{
-        uint32_t n = level; 
+    auto i = s.indent;
+    auto indent = [i]{
+        uint32_t n = i; 
         while (n--) errs() << "  ";
     };
 
-    if (level == 0) errs() << "+++++++++++dump AST+++++++++++" << "\n";
+    if (s.indent == 0) errs() << "+++++++++++dump AST+++++++++++" << "\n";
     uint32_t n = 0;
+    s.indent++;
     while (node) {
         // errs() << NodeName[node->id] << "--";
         switch (node->id)
@@ -1031,25 +1040,35 @@ void dumpAst(Node *node, uint32_t level) {
             indent();
             errs() << "If Statement:\n";
             errs() << "Conditional: ";
-            dumpAst(((If *)node)->cond, level + 1);
+            dumpAst(((If *)node)->cond, s);
             errs() << "\nBody: ";
-            dumpAst(((If *)node)->body, level + 1);
+            dumpAst(((If *)node)->body, s);
+            errs() << '\n';
+            break;
+        case NodeReturn:
+            errs() << node->tok->str() << " ";
+            dumpAst(((Return *)node)->expr, s);
             errs() << '\n';
             break;
         case TypeInt: 
-            errs() << node->tok->str();
+            errs() << node->tok->str() << " ";
             break;
 
-        case NodeAdd:
-        case NodeSub:
-            dumpBinOp(node);
+        case NodeAdd: case NodeSub: case NodeDiv: case NodeMul: case NodeModulo: case NodeRemainder:
+        case NodeLessEq: case NodeLess: case NodeEq: case NodeGreaterEq: case NodeGreater: case NodeNotEq:
+        case NodeShiftLeft: case NodeShiftRight: case NodeShiftRightLogical: case NodeAnd: case NodeOr: case NodeXor:
+            s.is_bin_op = true;
+            dumpBinOp(node, s);
+            s.is_bin_op = false;
             break;
         case NodeIdent:
-            errs() << node->tok->str();
+            errs() << node->tok->str() << " ";
             break;
         case NodeFnCall:
-            errs() << "call: " << node->tok->str();
-            dumpAst(((FnCall *)node)->args, level + 1);
+            errs() << "call: " << node->tok->str() << "( ";
+            dumpAst(((FnCall *)node)->args, s);
+            errs() << ") ";
+            if (!s.is_bin_op) errs() << '\n';
             break;
         default:
             break;
@@ -1057,5 +1076,6 @@ void dumpAst(Node *node, uint32_t level) {
         n++;
         node = node->next;
     }
-    if (level == 0) errs() << "\nNumber of AST Node: " << n << '\n';
+    s.indent--;
+    if (s.indent == 0) errs() << "\nNumber of AST Node: " << n << '\n';
 }

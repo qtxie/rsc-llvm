@@ -11,6 +11,7 @@
 #include "Tokenizer.h"
 #include "Preprocessor.h"
 #include "Parser.h"
+#include "CodeGen.h"
 #include "TimeMeasuring.h"
 #include <llvm/Support/WithColor.h>
 #include <llvm/Support/Path.h>
@@ -161,8 +162,9 @@ dumpTokens(tok, "All the tokens:");
 
 dumpTokens(tok, "Preprocessed tokens:");
 
+    auto codegen = CodeGen(*this);
     t.insertBreakpoint("parse");
-    auto parser = Parser(*this);
+    auto parser = Parser(*this, codegen);
     auto prog = parser.parse(tok);
     llvm::errs() << "Parse time: " << t.getTimeFromBreakpoint("parse") << "ms\n";
 

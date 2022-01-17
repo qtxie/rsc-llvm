@@ -124,6 +124,10 @@ struct FnCall : Node {
     Node *args;
 };
 
+struct Return : Node {
+    Node *expr;
+};
+
 struct If : Node {
     Node *cond;
     Node *body;
@@ -149,10 +153,13 @@ struct Program : Node {
 };
 
 class Compilation;
+class CodeGen;
 
 class Parser : protected Utils
 {
 private:
+    CodeGen &codegen;
+
     typedef Buffer<unsigned char, 1024 * 1024> NodeBuffer; 
 
     uint32_t curTypeId;
@@ -164,7 +171,7 @@ private:
     NodeBuffer nodeBuf;
 
 public:
-    Parser(Compilation &c) : Utils(c), curTypeId(1000) {};
+    Parser(Compilation &c, CodeGen &_codegen) : Utils(c), codegen(_codegen), curTypeId(1000) {};
     Parser(Compilation &&) = delete;  // prevents rvalue binding
 
     Program *parse(Token *tok);
@@ -183,6 +190,7 @@ private:
 
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
     Node * parseIf(Token *tok, Token **rest);
+    Node * parseReturn(Token *tok, Token **rest);
     Node * parseFnCall(Function *fn, Token *tok, Token **rest);
     Node * parseAssignment(Token *tok, Token **rest);
     Node * parseExpr(Token *tok, Token **rest);
@@ -248,7 +256,13 @@ private:
     T * copyNode(const T *node) {return new (nodeBuf.alloc(sizeof(T))) T{*node};}
 };
 
+
+
+struct DumpState {
+    bool is_bin_op;
+    uint32_t indent;
+};
 void dumpFunction(Function *func);
-void dumpAst(Node *node, uint32_t level = 0);
+void dumpAst(Node *node, DumpState s = {});
 
 #endif /* RED_SYSTEM_PARSER_H */

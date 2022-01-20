@@ -14,6 +14,7 @@
 #include "Diagnostic.h"
 #include "Token.h"
 #include <llvm/Support/FormatVariadic.h>
+#include <llvm/Target/TargetMachine.h>
 
 using llvm::SMLoc;
 
@@ -26,6 +27,8 @@ enum BuildMode {
 class Compilation {
 public:
     std::string mainFile;
+    llvm::TargetMachine *TM;
+    bool emit_llvm_ir;
     std::string currentPath;
     std::vector<std::string> paths;
     llvm::SourceMgr srcMgr;
@@ -39,10 +42,16 @@ public:
     std::string os;
     std::string subSystem;
     std::vector<StringRef> modules;
+    std::string outputFilepath;
+    std::string entryFuncName;
 
-    Compilation(std::string filepath) : mainFile(filepath) {}
+    Compilation(std::string filepath, llvm::TargetMachine *target, bool emit_llvm = false) : 
+        mainFile(filepath), TM(target), emit_llvm_ir(emit_llvm) {
+        entryFuncName = "__Red/System__MainStartup";
+    }
 
     void run();
+    void link();
 
     std::string toNativePath(const char *p, int len);
     const char* readFile(const std::string &filepath, SMLoc include_loc);

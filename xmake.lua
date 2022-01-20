@@ -163,7 +163,18 @@ option("llvm")
         "LLVMBitstreamReader",
         "LLVMBinaryFormat",
         "LLVMSupport",
-        "LLVMDemangle"
+        "LLVMDemangle",
+        "lldCOFF",
+        "lldELF",
+        "lldMachO",
+        "lldMachO2",
+        "lldMinGW",
+        "lldWasm",
+        "lldCommon",
+        "lldCore",
+        "lldDriver",
+        "lldReaderWriter",
+        "lldYAML"
     )
     if is_mode("debug") then 
         add_linkdirs("../../../llvm+clang+lld-13.0.0-x86_64-windows-msvc-debug/lib")

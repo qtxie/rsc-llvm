@@ -13,6 +13,12 @@
 
 using llvm::StringMap;
 
+namespace llvm {
+    class Value;
+}
+
+typedef llvm::Value IrValue;
+
 enum FuncAttr {
     FuncStdcall  = 0x0001,
     FuncCdecl    = 0x0002,
@@ -91,6 +97,7 @@ struct Function : Type {
         Token *token;
         FuncAttr value;
     } attrs;
+    IrValue *ir;
 };
 
 struct Variable : Node {
@@ -98,6 +105,7 @@ struct Variable : Node {
     Node *init_data;
     VarAttr attrs;
     int offset;     // for local variable
+    IrValue *ir;
 };
 
 struct Identifier: Node {
@@ -203,7 +211,7 @@ private:
     Node * parsePath(Token *tok, Token **rest, bool &is_setpath);
     Node * parseBinaryOp(Node *lhs, Token *tok, Token **rest);
     Node * parseCode(Token *tok, Token **rest, Context *ctx, bool is_block = true);
-    Node * parseProgram(Token *tok, Context *ctx, bool is_func_body = false);
+    Node * parseCodeBlock(Token *tok, Context *ctx, bool is_func_body = false);
     void parseFunctions(Context *ctx);
 
     const Type * collectType(Token *tok, Token **rest) {

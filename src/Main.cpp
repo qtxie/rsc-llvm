@@ -8,8 +8,6 @@
 */
 
 #include <llvm/CodeGen/CommandFlags.h>
-#include <llvm/IR/IRPrintingPasses.h>
-#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/Host.h>
@@ -19,10 +17,6 @@
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Support/WithColor.h>
-#include <llvm/Passes/PassBuilder.h>
-#include <llvm/Passes/PassPlugin.h>
-#include <llvm/Analysis/AliasAnalysis.h>
-#include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Target/TargetMachine.h>
 
@@ -41,25 +35,16 @@ static cl::opt<std::string>
             cl::desc("Override target triple for module"));
 
 static cl::opt<bool>
-    EmitLLVM("emit-llvm",
+    EmitLLVM("emit-llvm-ir",
              cl::desc("Emit IR code instead of assembler"),
              cl::init(false));
 
 static cl::opt<signed char> OptLevel(
-    cl::desc("Setting the optimization level:"),
-    cl::ZeroOrMore,
+    "O", cl::desc("Setting the optimization level:"),
     cl::values(
-        clEnumValN(3, "O", "Equivalent to -O3"),
-        clEnumValN(0, "O0", "Optimization level 0"),
-        clEnumValN(1, "O1", "Optimization level 1"),
-        clEnumValN(2, "O2", "Optimization level 2"),
-        clEnumValN(3, "O3", "Optimization level 3"),
-        clEnumValN(-1, "Os",
-                   "Like -O2 with extra optimizations "
-                   "for size"),
-        clEnumValN(
-            -2, "Oz",
-            "Like -Os but reduces code size further")),
+        clEnumValN(0, "debug", "(default) No Optimizations"),
+        clEnumValN(1, "release", "Optimize for fast binary"),
+        clEnumValN(2, "release-small", "like \'release\', but reduces code size")),
     cl::init(0));
 
 static cl::opt<bool>
@@ -76,73 +61,58 @@ static cl::opt<std::string> PipelineStartEPPipeline(
 
 void printVersion(llvm::raw_ostream &OS) {
     OS << "Red/System compiler v" << RSC_VERSION << "\n";
-    OS << "  Default target: "
-        << llvm::sys::getDefaultTargetTriple() << "\n";
+    OS << "  Default target: " << llvm::sys::getDefaultTargetTriple() << "\n";
     std::string CPU(llvm::sys::getHostCPUName());
-    OS << "  Host CPU: " << CPU << "\n";
-    OS << "\n";
+    OS << "  Host CPU: " << CPU << "\n\n";
     OS.flush();
-    llvm::TargetRegistry::printRegisteredTargetsForVersion(
-        OS);
+    llvm::TargetRegistry::printRegisteredTargetsForVersion(OS);
     exit(EXIT_SUCCESS);
 }
 
-llvm::TargetMachine *
-createTargetMachine(const char *Argv0) {
-  llvm::Triple Triple = llvm::Triple(
-      !MTriple.empty()
-          ? llvm::Triple::normalize(MTriple)
-          : llvm::sys::getDefaultTargetTriple());
+TargetMachine * createTargetMachine(const char *Argv0) {
+  Triple triple(!MTriple.empty() ? Triple::normalize(MTriple) : sys::getDefaultTargetTriple());
 
-  llvm::TargetOptions TargetOptions =
-      codegen::InitTargetOptionsFromCodeGenFlags(
-          Triple);
+  TargetOptions targetOptions = codegen::InitTargetOptionsFromCodeGenFlags(triple);
   std::string CPUStr = codegen::getCPUStr();
-  std::string FeatureStr = codegen::getFeaturesStr();
+  std::string featureStr = codegen::getFeaturesStr();
 
-  std::string Error;
-  const llvm::Target *Target =
-      llvm::TargetRegistry::lookupTarget(
-          codegen::getMArch(), Triple, Error);
+  std::string err;
+  const Target *target = TargetRegistry::lookupTarget(codegen::getMArch(), triple, err);
 
-  if (!Target) {
-    llvm::WithColor::error(llvm::errs(), Argv0)
-        << Error;
-    return nullptr;
+  if (!target) {
+      WithColor::error(llvm::errs(), Argv0) << err;
+      return nullptr;
   }
 
-  llvm::TargetMachine *TM = Target->createTargetMachine(
-      Triple.getTriple(), CPUStr, FeatureStr,
-      TargetOptions,
-      llvm::Optional<llvm::Reloc::Model>(
-          codegen::getRelocModel()));
+  llvm::TargetMachine *TM = target->createTargetMachine(
+      triple.getTriple(), CPUStr, featureStr, targetOptions,
+      llvm::Optional<llvm::Reloc::Model>(codegen::getRelocModel()));
   return TM;
 }
 
-std::string output_file_name(StringRef InputFilename) {
-  CodeGenFileType FileType = codegen::getFileType();
-  std::string OutputFilename;
-  if (InputFilename == "-") {
-    OutputFilename = "-";
-  } else {
-    if (InputFilename.endswith(".reds") ||
-        InputFilename.endswith(".reds"))
-      OutputFilename = InputFilename.drop_back(4).str();
-    else
-      OutputFilename = InputFilename.str();
-    switch (FileType) {
-    case CGFT_AssemblyFile:
-      OutputFilename.append(EmitLLVM ? ".ll" : ".s");
-      break;
-    case CGFT_ObjectFile:
-      OutputFilename.append(".o");
-      break;
-    case CGFT_Null:
-      OutputFilename.append(".null");
-      break;
+std::string outFileName(StringRef InputFilename) {
+    CodeGenFileType FileType = codegen::getFileType();
+    std::string OutputFilename;
+    if (InputFilename == "-") {
+        OutputFilename = "-";
+    } else {
+        if (InputFilename.endswith(".reds") || InputFilename.endswith(".reds"))
+            OutputFilename = InputFilename.drop_back(4).str();
+        else
+            OutputFilename = InputFilename.str();
+        switch (FileType) {
+        case CGFT_AssemblyFile:
+            OutputFilename.append(EmitLLVM ? ".ll" : ".s");
+            break;
+        case CGFT_ObjectFile:
+            OutputFilename.append(".o");
+            break;
+        case CGFT_Null:
+            OutputFilename.append(".null");
+            break;
+        }
     }
-  }
-  return OutputFilename;
+    return OutputFilename;
 }
 
 int main(int Argc, const char **Argv) {
@@ -153,9 +123,9 @@ int main(int Argc, const char **Argv) {
     //InitializeAllAsmPrinters();
     //InitializeAllAsmParsers();
 
-    //InitializeNativeTarget();
-    //InitializeNativeTargetAsmPrinter();
-    //InitializeNativeTargetAsmParser();
+    InitializeNativeTarget();
+    InitializeNativeTargetAsmPrinter();
+    InitializeNativeTargetAsmParser();
 
     llvm::cl::SetVersionPrinter(&printVersion);
     llvm::cl::ParseCommandLineOptions(Argc, Argv);
@@ -166,12 +136,14 @@ int main(int Argc, const char **Argv) {
         exit(EXIT_FAILURE);
     }
 
-    //llvm::TargetMachine *TM = createTargetMachine(Argv[0]);
-    //if (!TM) exit(EXIT_FAILURE);
+    llvm::TargetMachine *TM = createTargetMachine(Argv[0]);
+    if (!TM) exit(EXIT_FAILURE);
 
     for (const auto &file : InputFiles) {
-        Compilation comp{file};
+        Compilation comp(file, TM, EmitLLVM);
         comp.run();
     }
+
+    delete TM;
     return 0;
 }

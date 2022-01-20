@@ -15,6 +15,8 @@
 #include "TimeMeasuring.h"
 #include <llvm/Support/WithColor.h>
 #include <llvm/Support/Path.h>
+#include <lld/Common/Driver.h>
+#include <lld/Common/ErrorHandler.h>
 
 #ifdef _WIN32
     #define OS_DIR_SEP '\\'
@@ -143,6 +145,27 @@ Token * Compilation::parseHeader(Token *tok) {
     return tok;
 }
 
+void Compilation::link() {
+    std::vector<const char *> argv{"-ERRORLIMIT:0", "-NOLOGO"};
+    argv.push_back("-DEBUG");
+    argv.push_back("-STACK:16777216");
+    argv.push_back("-MACHINE:X64");
+
+    auto out_file = outputFilepath + ".exe";
+    argv.push_back(out_file.insert(0, "-OUT:").c_str());
+
+    auto obj_file = outputFilepath;
+    argv.push_back(obj_file.append(".obj").c_str());
+
+    argv.push_back("-SUBSYSTEM:console");
+    argv.push_back("-NODEFAULTLIB");
+    auto entry = std::string("-ENTRY:") + entryFuncName;
+    argv.push_back(entry.c_str());
+
+    if (!lld::coff::link(argv, false, llvm::outs(), llvm::errs()))
+        lld::exitLld(-1);
+}
+
 void Compilation::run() {
     TimeMeasuring t(true);
 
@@ -162,10 +185,16 @@ dumpTokens(tok, "All the tokens:");
 
 dumpTokens(tok, "Preprocessed tokens:");
 
+    auto ext = llvm::sys::path::extension(mainFile);
+    outputFilepath = std::string(mainFile).erase(mainFile.length() - ext.size());
+
     auto codegen = CodeGen(*this);
     t.insertBreakpoint("parse");
     auto parser = Parser(*this, codegen);
     auto prog = parser.parse(tok);
     llvm::errs() << "Parse time: " << t.getTimeFromBreakpoint("parse") << "ms\n";
 
+    t.insertBreakpoint("link");
+    if (!emit_llvm_ir) link();
+    llvm::errs() << "Link time: " << t.getTimeFromBreakpoint("link") << "ms\n";
 }

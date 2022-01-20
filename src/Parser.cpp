@@ -6,6 +6,7 @@
 */
 
 #include "Parser.h"
+#include "CodeGen.h"
 #include "Compilation.h"
 
 /** Grammar
@@ -531,17 +532,23 @@ void Parser::parseFunctions(Context *ctx) {
 
             // add params and local variables in function context
             auto add_into_fn_ctx = [this, &fn_ctx](Node *node) {
+                Node head{};
+                Node *cur = &head;
                 while (node) {
                     auto var = addVar(&fn_ctx, node->tok, true);
                     var->type = (Type *)node;
+                    cur = cur->next = var;
                     node = node->next;
                 }
+                return head.next;
             };
-            add_into_fn_ctx(fn->params);
-            add_into_fn_ctx(fn->locals);
+            fn->params = add_into_fn_ctx(fn->params);
+            fn->locals = add_into_fn_ctx(fn->locals);
     
-            fn->body.node = parseProgram(fn->body.token, &fn_ctx, true);
+            fn->body.node = parseCodeBlock(fn->body.token, &fn_ctx, true);
             curCtx = ctx;
+
+            codegen.emitFunction(fn);
 
         } else if (ty->id == NodeContext) {
             parseFunctions((Context* )ty);
@@ -956,7 +963,7 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
     return head.next;
 }
 
-Node * Parser::parseProgram(Token *tok, Context *ctx, bool is_func_body) {
+Node * Parser::parseCodeBlock(Token *tok, Context *ctx, bool is_func_body) {
 llvm::errs() << "====== ParseProgram start =======\n";
 
     curCtx = ctx;
@@ -989,7 +996,10 @@ Program * Parser::parse(Token *tok) {
     curFunc = &func;
     curGlobal = &global;
 
-    program->ast = parseProgram(tok, ctx);
+    program->ast = parseCodeBlock(tok, ctx);
+
+    codegen.emitMainFunc(program->ast);
+    codegen.output();
 
     program->functions = func.next;
     program->data = global.next;

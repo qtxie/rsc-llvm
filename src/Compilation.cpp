@@ -194,6 +194,10 @@ dumpTokens(tok, "Preprocessed tokens:");
     auto prog = parser.parse(tok);
     llvm::errs() << "Parse time: " << t.getTimeFromBreakpoint("parse") << "ms\n";
 
+    t.insertBreakpoint("codegen");
+    codegen.output();
+    llvm::errs() << "CodeGen time: " << t.getTimeFromBreakpoint("codegen") << "ms\n";
+
     t.insertBreakpoint("link");
     if (!emit_llvm_ir) link();
     llvm::errs() << "Link time: " << t.getTimeFromBreakpoint("link") << "ms\n";

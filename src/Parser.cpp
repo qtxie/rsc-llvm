@@ -999,7 +999,6 @@ Program * Parser::parse(Token *tok) {
     program->ast = parseCodeBlock(tok, ctx);
 
     codegen.emitMainFunc(program->ast);
-    codegen.output();
 
     program->functions = func.next;
     program->data = global.next;

@@ -20,6 +20,9 @@ private:
     llvm::LLVMContext Ctx;
     llvm::Module *M;
     llvm::IRBuilder<> *builder;
+    llvm::Function *curFunc;
+    llvm::BasicBlock *curBB;
+    llvm::Value *curVal;
 
     llvm::IntegerType *bool_ty;
     llvm::IntegerType *byte_ty;
@@ -32,10 +35,14 @@ public:
     ~CodeGen() {delete M;}
     CodeGen(Compilation &&) = delete;  // prevents rvalue binding
 
+    llvm::Value * readVariable(Variable *var);
+
+    llvm::Value * emitIf(If *node);
+    llvm::Value * emitCall(FnCall *call);
+    llvm::Value * emitBinOp(Node *node);
     llvm::Value * emitExpr(Node *node);
 
     void emitCode(Node *node);
-    void emitCall(FnCall *call);
     void emitGlobalVar(Variable *var);
     void emitFunction(Function *fn);
     void emitMainFunc(Node *ast);
@@ -43,6 +50,13 @@ public:
     void output();
 
 private:
+    llvm::BasicBlock * createBasicBlock(const llvm::Twine &name, llvm::BasicBlock *insertBefore = nullptr) {
+        return llvm::BasicBlock::Create(Ctx, name, curFunc, insertBefore);
+    }
+    void setCurrentBasicBlock(llvm::BasicBlock *bb) {
+        curBB = bb;
+        builder->SetInsertPoint(bb);
+    }
     llvm::FunctionType * createFuncType(Function *fn);
     llvm::Type * llvmType(const Node *ty);
 };

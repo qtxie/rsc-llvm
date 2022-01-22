@@ -20,6 +20,20 @@
 using llvm::GlobalValue;
 using llvm::BasicBlock;
 
+static const char * const NodeName[] = {
+    #define NODE(ID, STR) STR,
+    #define TYPE(ID, STR) STR,
+    #include "NodeId.def"
+    nullptr
+};
+
+static const char * const TypeName[] {
+    #define NODE(ID, STR)
+    #define TYPE(ID, STR) STR,
+    #include "NodeId.def"
+    nullptr
+};
+
 CodeGen::CodeGen(Compilation &c) : comp(c) {
     M = new llvm::Module(c.mainFile, Ctx);
     M->setTargetTriple(c.TM->getTargetTriple().getTriple());
@@ -30,6 +44,99 @@ CodeGen::CodeGen(Compilation &c) : comp(c) {
     f64_ty = llvm::Type::getDoubleTy(Ctx);
     bool_ty = llvm::Type::getInt1Ty(Ctx);
     byte_ty = llvm::Type::getInt8Ty(Ctx);
+}
+
+llvm::Value * CodeGen::readVariable(Variable *var) {
+    llvm::errs() << "readVariable: " << var->tok->str() << " " << var->ir << '\n';
+    return builder->CreateLoad(var->ir);
+}
+
+
+void CodeGen::emitGlobalVar(Variable *var) {
+    auto v = new llvm::GlobalVariable(
+        *M, llvmType(var->type), false, GlobalValue::PrivateLinkage, nullptr, var->tok->str());
+    var->ir = v;
+}
+
+llvm::Value * CodeGen::emitIf(If *node) {
+    auto if_bb = createBasicBlock("if.body");
+    auto after_if_bb = createBasicBlock("after.if");
+
+    llvm::Value *cond = emitExpr(node->cond);
+    builder->CreateCondBr(cond, if_bb, after_if_bb);
+
+    setCurrentBasicBlock(if_bb);
+    emitCode(node->body);
+    if (!curBB->getTerminator())
+        builder->CreateBr(after_if_bb);
+    setCurrentBasicBlock(after_if_bb);
+    return nullptr;
+}
+
+llvm::Value * CodeGen::emitCall(FnCall *call) {
+    llvm::Function *func = llvm::cast<llvm::Function>(call->fn->ir);
+    llvm::SmallVector<llvm::Value *> argv;
+    auto args = call->args;
+    while (args) {
+        argv.push_back(emitExpr(args));
+        args = args->next;
+    }
+
+    auto call_inst = llvm::CallInst::Create(func->getFunctionType(), func, argv, "");
+    builder->Insert(call_inst);
+    return call_inst;
+}
+
+llvm::Value * CodeGen::emitBinOp(Node *node) {
+    if (node->id < NodeAdd || node->id > NodeShiftRightLogical)
+        return nullptr;
+
+    BinaryOp *bin_op = (BinaryOp *)node;
+    llvm::Value *left = emitExpr(bin_op->lhs);
+    llvm::Value *right = emitExpr(bin_op->rhs);
+    assert(left != nullptr && right != nullptr);
+    llvm::Value *result = nullptr; 
+    switch (node->id)
+    {
+    case NodeAdd:    result = builder->CreateNSWAdd(left, right); break;
+    case NodeSub:    result = builder->CreateNSWSub(left, right); break;
+    case NodeLess:   result = builder->CreateICmpSLT(left, right); break; 
+    case NodeLessEq: result = builder->CreateICmpSLE(left, right); break; 
+    default:
+        break;
+    }
+    return result;
+}
+
+llvm::Value * CodeGen::emitExpr(Node *node) {
+    llvm::errs() << "emitExpr: " << NodeName[node->id] << '\n';
+    llvm::Value *val = nullptr;
+    switch (node->id)
+    {
+    case NodeIf:     val = emitIf((If *)node); break;
+    case NodeFnCall: val = emitCall((FnCall *)node); break;
+    case NodeVar:    val = readVariable((Variable *)node); break;
+    case NodeIdent:  val = readVariable(((Identifier *)node)->var); break;
+    case TypeInt:    val = llvm::ConstantInt::get(i32_ty, ((Type *)node)->data.value); break;
+    default:         val = emitBinOp(node); break;
+    }
+    curVal = val;
+    return val;
+}
+
+void CodeGen::emitCode(Node *node) {
+    while (node) {
+        llvm::Value *inst = nullptr;
+        llvm::errs() << "emitCode " << NodeName[node->id] << '\n';
+        switch (node->id)
+        {
+        case NodeReturn: builder->CreateRet(emitExpr(((Return *)node)->expr)); break;
+        default:
+            emitExpr(node);
+            break;
+        }
+        node = node->next;
+    }
 }
 
 llvm::FunctionType * CodeGen::createFuncType(Function *fn) {
@@ -46,66 +153,37 @@ llvm::FunctionType * CodeGen::createFuncType(Function *fn) {
     return llvm::FunctionType::get(result_ty, params_ty, false);
 }
 
-void CodeGen::emitGlobalVar(Variable *var) {
-    auto v = new llvm::GlobalVariable(
-        *M, llvmType(var->type), false, GlobalValue::PrivateLinkage, nullptr, var->tok->str());
-    var->ir = v;
-}
-
-void CodeGen::emitCall(FnCall *call) {
-    llvm::Function *func = llvm::cast<llvm::Function>(call->fn->ir);
-    llvm::SmallVector<llvm::Value *> argv;
-    auto args = call->args;
-    while (args) {
-        argv.push_back(emitExpr(args));
-        args = args->next;
-    }
-
-    auto call_inst = llvm::CallInst::Create(func->getFunctionType(), func, argv, "");
-    builder->Insert(call_inst);
-}
-
-llvm::Value * CodeGen::emitExpr(Node *node) {
-    switch (node->id)
-    {
-    case TypeInt: return llvm::ConstantInt::get(i32_ty, ((Type *)node)->data.value);
-    default:
-        break;
-    }
-    return nullptr;
-}
-
-void CodeGen::emitCode(Node *node) {
-    while (node) {
-        switch (node->id)
-        {
-        case NodeFnCall: emitCall((FnCall *)node); break;
-        case NodeReturn: builder->CreateRet(emitExpr(node)); break;
-        default:
-            //builder->Insert(emitExpr(node));
-            break;
-        }
-        node = node->next;
-    }
-}
-
 void CodeGen::emitFunction(Function *fn) {
     auto func_ty = createFuncType(fn);
     auto func = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, fn->tok->str(), *M);
-    fn->ir = func;
+    fn->ir = curFunc = func;
 
     auto entry_block = BasicBlock::Create(Ctx, "entry", func);
-    builder->SetInsertPoint(entry_block);
+    setCurrentBasicBlock(entry_block);
 
-    // allocate local variables
-    auto locals = (Variable *)fn->locals;
-    while (locals) {
-        locals->ir = builder->CreateAlloca(llvmType(locals->type));
-        locals = (Variable *)locals->next;
+    auto alloca_on_stack = [this](Node *node) {
+        Node head{};
+        Node *cur = &head;
+        while (node) {
+            Variable *var = (Variable *) node;
+            var->ir = builder->CreateAlloca(llvmType(var->type));
+            cur = cur->next = var;
+            node = node->next;
+        }
+    };
+
+    // allocate args on stack
+    alloca_on_stack(fn->params);
+    Variable *var = (Variable *)fn->params;
+    for (auto &arg : func->args()) {
+        builder->CreateStore(&arg, var->ir);
+        var = (Variable *)var->next;
     }
+    // allocate local variables on stack
+    alloca_on_stack(fn->locals);
 
     emitCode(fn->body.node);
-    builder->CreateRet(llvm::ConstantInt::get(i32_ty, 1));
+    builder->CreateRet(curVal);
 }
 
 void CodeGen::emitMainFunc(Node *ast) {
@@ -113,7 +191,7 @@ void CodeGen::emitMainFunc(Node *ast) {
     auto func = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, comp.entryFuncName, *M);
 
     auto entry_block = BasicBlock::Create(Ctx, "entry", func);
-    builder->SetInsertPoint(entry_block);
+    setCurrentBasicBlock(entry_block);
     emitCode(ast);
     builder->CreateRetVoid();
 }
@@ -148,7 +226,7 @@ void CodeGen::output() {
     OptimizationLevel opt_level;
 
     // Setting up the optimization level
-    opt_level = OptimizationLevel::O0;
+    opt_level = OptimizationLevel::O1;
 
     // Initialize the PassManager
     if (opt_level == OptimizationLevel::O0) {

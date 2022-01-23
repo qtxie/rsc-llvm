@@ -15,6 +15,8 @@
 #include "Token.h"
 #include <llvm/Support/FormatVariadic.h>
 #include <llvm/Target/TargetMachine.h>
+#include <llvm/Passes/PassBuilder.h>
+#include <llvm/ADT/SmallSet.h>
 
 using llvm::SMLoc;
 
@@ -24,11 +26,15 @@ enum BuildMode {
     BuildModeSmallRelease
 };
 
+using OptimizationLevel = typename llvm::PassBuilder::OptimizationLevel;
+
 class Compilation {
 public:
     std::string mainFile;
+    std::string appDataDir;
     llvm::TargetMachine *TM;
-    bool emit_llvm_ir;
+    OptimizationLevel optLevel;
+    bool emitIr;
     std::string currentPath;
     std::vector<std::string> paths;
     llvm::SourceMgr srcMgr;
@@ -45,13 +51,18 @@ public:
     std::string outputFilepath;
     std::string entryFuncName;
 
-    Compilation(std::string filepath, llvm::TargetMachine *target, bool emit_llvm = false) : 
-        mainFile(filepath), TM(target), emit_llvm_ir(emit_llvm) {
+    Compilation(
+        std::string filepath,
+        std::string data_dir,
+        llvm::TargetMachine *target,
+        OptimizationLevel level,
+        bool emit_llvm = false
+        ) : mainFile(filepath), appDataDir(data_dir), TM(target), optLevel(level), emitIr(emit_llvm) {
         entryFuncName = "__Red/System__MainStartup";
     }
 
     void run();
-    void link();
+    void link(llvm::SmallSet<StringRef, 4> &import_libs);
 
     std::string toNativePath(const char *p, int len);
     const char* readFile(const std::string &filepath, SMLoc include_loc);

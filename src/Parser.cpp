@@ -292,8 +292,18 @@ Token *Parser::parseFuncSpec(Token *tok, Function *func, bool is_collect) {
 
     // attribute block
     if (tok->id == TokenIdLBracket) {
-        func->attrs.token = tok;
-        skipBlock(tok, &tok);
+        auto attrs = func->attrs.value;
+        do {
+            using namespace llvm;
+            tok = tok->next;
+            if (tok->equals("variadic"))     attrs |= FuncVariadic;
+            else if (tok->equals("cdecl"))   attrs = attrs & (~FuncCallConv) | FuncCdecl;
+            else if (tok->equals("stdcall")) attrs = attrs & (~FuncCallConv) | FuncStdcall;
+            else if (tok->id == TokenIdRBracket) break;
+            else comp.error(tok, err_invalid_func);
+        } while (tok->id != TokenIdEof);
+        func->attrs.value = attrs;
+        tok = tok->next;
     }
 
     // doc string?
@@ -393,6 +403,7 @@ Node * Parser::collectDecl(Token *tok, Token **rest) {
     // function-decl = ("func" | "function") func-spec-block body-block
     if (tok->id == TokenIdFunc) {
         auto func = newNode<Function>(TypeFunc, name);
+        func->import_name = name;
         // func-spec-block
         tok = parseFuncSpec(tok->next, func, true);
 
@@ -545,7 +556,7 @@ void Parser::parseFunctions(Context *ctx) {
             fn->params = add_into_fn_ctx(fn->params);
             fn->locals = add_into_fn_ctx(fn->locals);
     
-            fn->body.node = parseCodeBlock(fn->body.token, &fn_ctx, true);
+            if (fn->body.token) fn->body.node = parseCodeBlock(fn->body.token, &fn_ctx, true);
             curCtx = ctx;
 
             codegen.emitFunction(fn);
@@ -587,9 +598,9 @@ Token * Parser::parseImport(Token *tok, Context *ctx) {
             func->import_name = tok;
             tok = skip(tok, TokenIdString, "string");
             
-            tok = parseFuncSpec(tok, func, true);
-            func->data.import_lib = lib_name;
             func->attrs.value = attr;
+            func->data.import_lib = lib_name;
+            tok = parseFuncSpec(tok, func, true);
             addDecl(ctx, func->tok, func);
         }
         tok = tok->next;
@@ -772,11 +783,24 @@ Node * Parser::parseFnCall(Function *fn, Token *tok, Token **rest) {
     call->fn = fn;
     Node head{};
     Node *cur = &head;
-    auto param = fn->params;
-    for (int n = fn->n_params; n; n--) {
-        auto arg = parseExpr(tok->next, &tok);
-        cur = cur->next = arg; //checkArgType(arg, (Type *)param);
-        param = param->next;
+    if (fn->attrs.value & FuncVariadic) {
+        if (tok->next->id == TokenIdLBracket) {
+            tok = tok->next;
+            do {
+                auto arg = parseExpr(tok->next, &tok);
+                cur = cur->next = arg; //checkArgType(arg, (Type *)param);
+            } while (tok->next->id != TokenIdRBracket);
+            tok = tok->next;
+        } else {
+            cur->next = parseExpr(tok->next, &tok);
+        }
+    } else {
+        auto param = fn->params;
+        for (int n = fn->n_params; n; n--) {
+            auto arg = parseExpr(tok->next, &tok);
+            cur = cur->next = arg; //checkArgType(arg, (Type *)param);
+            param = param->next;
+        }
     }
     call->args = head.next;
     *rest = tok;
@@ -855,6 +879,10 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
             if (tok->toDouble(ty->data.fvalue))
                 comp.error(tok, err_float_overflow);
             break;
+        case TokenIdString:
+            ty = newNode<Type>(TypeArray, tok);
+            node = ty;
+            break;
         case TokenIdLParen:
             node = parseExpr(tok->next, &tok);
             tok = tok->next;
@@ -916,8 +944,9 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
         {
         // declaration
         case TokenIdMacroEnum:
-        case TokenIdMacroImport:
-
+        case TokenIdMacroImport: 
+            tok = tok->next;
+            continue;
         // statement
         case TokenIdIf: node = parseIf(tok, &tok); break;
         case TokenIdEither:

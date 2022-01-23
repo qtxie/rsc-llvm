@@ -10,6 +10,7 @@
 
 #include "Utils.h"
 #include "StringMap.h"
+#include <llvm/ADT/BitmaskEnum.h>
 
 using llvm::StringMap;
 
@@ -22,13 +23,15 @@ typedef llvm::Value IrValue;
 enum FuncAttr {
     FuncStdcall  = 0x0001,
     FuncCdecl    = 0x0002,
+    FuncCallConv = 0x0003,
     FuncInfix    = 0x0004,
     FuncCallback = 0x0008,
     FuncVariadic = 0x0010,
     FuncTyped    = 0x0020,
     FuncCustom   = 0x0040,
     FuncCatch    = 0x0080,
-    FuncInline   = 0x0100
+    FuncInline   = 0x0100,
+    LLVM_MARK_AS_BITMASK_ENUM(/* LargestValue = */ FuncInline)
 };
 
 enum VarAttr {
@@ -175,6 +178,7 @@ private:
     Node    *curGlobal;
     Context *curCtx;
     SmallVector<uint32_t> tids;  // detect struct circular reference
+    SmallVector<Token *> import_libs;
 
     NodeBuffer nodeBuf;
 

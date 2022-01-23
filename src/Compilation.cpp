@@ -145,7 +145,7 @@ Token * Compilation::parseHeader(Token *tok) {
     return tok;
 }
 
-void Compilation::link() {
+void Compilation::link(llvm::SmallSet<StringRef, 4> &import_libs) {
     std::vector<const char *> argv{"-ERRORLIMIT:0", "-NOLOGO"};
     argv.push_back("-DEBUG");
     argv.push_back("-STACK:16777216");
@@ -161,6 +161,16 @@ void Compilation::link() {
     argv.push_back("-NODEFAULTLIB");
     auto entry = std::string("-ENTRY:") + entryFuncName;
     argv.push_back(entry.c_str());
+
+    auto lib_dir = appDataDir + OS_DIR_SEP;
+    std::vector<std::string> libs;
+    for (auto &lib : import_libs) {
+        SmallVector<char> libname(lib.begin(), lib.end());
+        llvm::sys::path::replace_extension(libname, ".lib");
+        libs.push_back(lib_dir);
+        auto &libpath = libs.back().append(libname.data(), libname.size());
+        argv.push_back(libpath.c_str());
+    }
 
     if (!lld::coff::link(argv, false, llvm::outs(), llvm::errs()))
         lld::exitLld(-1);
@@ -199,6 +209,6 @@ dumpTokens(tok, "Preprocessed tokens:");
     llvm::errs() << "CodeGen time: " << t.getTimeFromBreakpoint("codegen") << "ms\n";
 
     t.insertBreakpoint("link");
-    if (!emit_llvm_ir) link();
+    if (!emitIr) link(codegen.import_libs);
     llvm::errs() << "Link time: " << t.getTimeFromBreakpoint("link") << "ms\n";
 }

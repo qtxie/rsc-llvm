@@ -75,6 +75,8 @@ llvm::Value * CodeGen::emitIf(If *node) {
 
 llvm::Value * CodeGen::emitCall(FnCall *call) {
     llvm::Function *func = llvm::cast<llvm::Function>(call->fn->ir);
+
+    // process arguments
     llvm::SmallVector<llvm::Value *> argv;
     auto args = call->args;
     while (args) {
@@ -118,6 +120,7 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     case NodeVar:    val = readVariable((Variable *)node); break;
     case NodeIdent:  val = readVariable(((Identifier *)node)->var); break;
     case TypeInt:    val = llvm::ConstantInt::get(i32_ty, ((Type *)node)->data.value); break;
+    case TypeArray:  val = builder->CreateGlobalStringPtr(node->tok->str(), "", 0, M); break;
     default:         val = emitBinOp(node); break;
     }
     curVal = val;
@@ -150,13 +153,26 @@ llvm::FunctionType * CodeGen::createFuncType(Function *fn) {
         params_ty.push_back(llvmType(params));
         params = params->next;
     }
-    return llvm::FunctionType::get(result_ty, params_ty, false);
+    return llvm::FunctionType::get(result_ty, params_ty, fn->attrs.value & FuncVariadic);
 }
 
 void CodeGen::emitFunction(Function *fn) {
     auto func_ty = createFuncType(fn);
-    auto func = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, fn->tok->str(), *M);
+    auto func = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, fn->import_name->str(), *M);
     fn->ir = curFunc = func;
+
+    if (auto lib = fn->data.import_lib) import_libs.insert(lib->str());
+
+    // process attributes
+    auto attrs = fn->attrs.value;
+    if (attrs & FuncStdcall)
+        func->setCallingConv(llvm::CallingConv::X86_StdCall);
+    else if (attrs & FuncVariadic || attrs & FuncCdecl)
+        func->setCallingConv(llvm::CallingConv::C);
+    else
+        func->setCallingConv(llvm::CallingConv::Fast);
+
+    if (fn->data.import_lib) return;
 
     auto entry_block = BasicBlock::Create(Ctx, "entry", func);
     setCurrentBasicBlock(entry_block);
@@ -223,10 +239,7 @@ void CodeGen::output() {
         });
     
     ModulePassManager module_pm;
-    OptimizationLevel opt_level;
-
-    // Setting up the optimization level
-    opt_level = OptimizationLevel::O1;
+    OptimizationLevel opt_level = comp.optLevel;
 
     // Initialize the PassManager
     if (opt_level == OptimizationLevel::O0) {
@@ -242,7 +255,7 @@ void CodeGen::output() {
     sys::fs::OpenFlags open_flags = sys::fs::OF_None;
 
     auto filepath = comp.outputFilepath;
-    if (comp.emit_llvm_ir) {
+    if (comp.emitIr) {
         open_flags |= sys::fs::OF_Text;
         filepath.append(".ll");
     } else {
@@ -255,7 +268,7 @@ void CodeGen::output() {
         WithColor::error(errs()) << err.message() << '\n';
         return;
     }
-    if (comp.emit_llvm_ir) {
+    if (comp.emitIr) {
         codegen_pm.add(createPrintModulePass(out_file->os()));
     } else {
         comp.TM->addPassesToEmitFile(codegen_pm, out_file->os(), nullptr, CGFT_ObjectFile);
@@ -275,11 +288,13 @@ llvm::Type * CodeGen::llvmType(const Node *node) {
         ty = ((const Variable *)node)->type;
     switch (ty->id)
     {
-    case TypeInt: return i32_ty;
+    case TypeInt:    return i32_ty;
     case TypeDouble: return f64_ty;
-    case TypeFloat: return f32_ty;
-    case TypeBool: return bool_ty;
-    case TypeByte: return byte_ty;
+    case TypeFloat:  return f32_ty;
+    case TypeBool:   return bool_ty;
+    case TypeByte:   return byte_ty;
+    case TypePtr:    return llvmType(ty->data.type)->getPointerTo();
+    case TypeArray:  return llvm::ArrayType::get(byte_ty, ty->tok->len);
     case TypeFunc: 
 
     default:

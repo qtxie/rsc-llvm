@@ -10,6 +10,7 @@
 
 #include "Parser.h"
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/ADT/SmallSet.h>
 
 class Compilation;
 
@@ -48,6 +49,8 @@ public:
     void emitMainFunc(Node *ast);
 
     void output();
+
+    llvm::SmallSet<StringRef, 4> import_libs;
 
 private:
     llvm::BasicBlock * createBasicBlock(const llvm::Twine &name, llvm::BasicBlock *insertBefore = nullptr) {

@@ -7,6 +7,7 @@
  * Summary: 
 */
 
+#include <filesystem>
 #include <llvm/CodeGen/CommandFlags.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/CommandLine.h>
@@ -17,6 +18,7 @@
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Support/WithColor.h>
+#include <llvm/Support/ConvertUTF.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Target/TargetMachine.h>
 
@@ -47,18 +49,6 @@ static cl::opt<signed char> OptLevel(
         clEnumValN(2, "release-small", "like \'release\', but reduces code size")),
     cl::init(0));
 
-static cl::opt<bool>
-    DebugPM("debug-pass-manager", cl::Hidden,
-            cl::desc("Print PM debugging information"));
-
-static cl::opt<std::string> PassPipeline(
-    "passes",
-    cl::desc("A description of the pass pipeline"));
-
-static cl::opt<std::string> PipelineStartEPPipeline(
-    "passes-ep-pipeline-start",
-    cl::desc("Pipeline start extension point"));
-
 void printVersion(llvm::raw_ostream &OS) {
     OS << "Red/System compiler v" << RSC_VERSION << "\n";
     OS << "  Default target: " << llvm::sys::getDefaultTargetTriple() << "\n";
@@ -70,50 +60,107 @@ void printVersion(llvm::raw_ostream &OS) {
 }
 
 TargetMachine * createTargetMachine(const char *Argv0) {
-  Triple triple(!MTriple.empty() ? Triple::normalize(MTriple) : sys::getDefaultTargetTriple());
+    Triple triple(!MTriple.empty() ? Triple::normalize(MTriple) : sys::getDefaultTargetTriple());
 
-  TargetOptions targetOptions = codegen::InitTargetOptionsFromCodeGenFlags(triple);
-  std::string CPUStr = codegen::getCPUStr();
-  std::string featureStr = codegen::getFeaturesStr();
+    TargetOptions targetOptions = codegen::InitTargetOptionsFromCodeGenFlags(triple);
+    std::string CPUStr = codegen::getCPUStr();
+    std::string featureStr = codegen::getFeaturesStr();
 
-  std::string err;
-  const Target *target = TargetRegistry::lookupTarget(codegen::getMArch(), triple, err);
+    std::string err;
+    const Target *target = TargetRegistry::lookupTarget(codegen::getMArch(), triple, err);
 
-  if (!target) {
-      WithColor::error(llvm::errs(), Argv0) << err;
-      return nullptr;
-  }
-
-  llvm::TargetMachine *TM = target->createTargetMachine(
-      triple.getTriple(), CPUStr, featureStr, targetOptions,
-      llvm::Optional<llvm::Reloc::Model>(codegen::getRelocModel()));
-  return TM;
-}
-
-std::string outFileName(StringRef InputFilename) {
-    CodeGenFileType FileType = codegen::getFileType();
-    std::string OutputFilename;
-    if (InputFilename == "-") {
-        OutputFilename = "-";
-    } else {
-        if (InputFilename.endswith(".reds") || InputFilename.endswith(".reds"))
-            OutputFilename = InputFilename.drop_back(4).str();
-        else
-            OutputFilename = InputFilename.str();
-        switch (FileType) {
-        case CGFT_AssemblyFile:
-            OutputFilename.append(EmitLLVM ? ".ll" : ".s");
-            break;
-        case CGFT_ObjectFile:
-            OutputFilename.append(".o");
-            break;
-        case CGFT_Null:
-            OutputFilename.append(".null");
-            break;
-        }
+    if (!target) {
+        WithColor::error(llvm::errs(), Argv0) << err;
+        return nullptr;
     }
-    return OutputFilename;
+
+    llvm::TargetMachine *TM = target->createTargetMachine(
+        triple.getTriple(), CPUStr, featureStr, targetOptions,
+        llvm::Optional<Reloc::Model>(Reloc::Model::PIC_));
+    return TM;
 }
+
+#ifndef _WIN32
+
+#include <pwd.h>
+#include <unistd.h>
+
+static std::string getHome() {
+	std::string res;
+	int uid = getuid();
+	const char* homeEnv = std::getenv("HOME");
+	if ( uid != 0 && homeEnv) {
+		//We only acknowlegde HOME if not root.
+		res = homeEnv;
+		return res;
+	}
+	struct passwd* pw = nullptr;
+	struct passwd pwd;
+	long bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
+	if (bufsize < 0) {
+		bufsize = 16384;
+	}
+	std::vector<char> buffer;
+	buffer.resize(bufsize);
+	int error_code = getpwuid_r(uid, &pwd, buffer.data(), buffer.size(), &pw);
+	if (error_code) {
+		throw std::runtime_error("Unable to get passwd struct.");
+	}
+	const char* tempRes = pw->pw_dir;
+	if (!tempRes) {
+		throw std::runtime_error("User has no home directory");
+	}
+	res = tempRes;
+	return res;
+}
+
+#endif
+
+#ifdef _WIN32
+
+// Make sure we don't bring in all the extra junk with windows.h
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+// stringapiset.h depends on this
+#include <windows.h>
+// For SUCCEEDED macro
+#include <winerror.h>
+// For WideCharToMultiByte
+#include <stringapiset.h>
+// For SHGetFolderPathW and various CSIDL "magic numbers"
+#include <shlobj.h>
+
+std::string getCacheDir() {
+    // KF_FLAG_CREATE force folder creation if not exists
+    wchar_t *appdata = NULL;
+    if (SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, NULL, &appdata) == S_OK) {
+        std::string res;
+        int actualSize = WideCharToMultiByte(CP_UTF8, 0, appdata, -1, nullptr, 0, nullptr, nullptr);
+        if (actualSize > 0) {
+            std::vector<char> buffer(actualSize);
+            actualSize = WideCharToMultiByte(CP_UTF8, 0, appdata, -1, &buffer[0], static_cast<int>(buffer.size()), nullptr, nullptr);
+            res = buffer.data();
+        } else {
+            WithColor::warning(llvm::errs()) << "Cannot get AppData folder\n";
+        }
+        CoTaskMemFree((void*)appdata);
+        return res;
+    }
+}
+
+#elif defined(__APPLE__)
+
+std::string getCacheDir() {
+    return getHome() + "/Library/Caches";
+}
+
+#else
+
+std::string getCacheDir() {
+    return getHome();
+}
+#endif
 
 int main(int Argc, const char **Argv) {
     llvm::InitLLVM X(Argc, Argv);
@@ -139,8 +186,21 @@ int main(int Argc, const char **Argv) {
     llvm::TargetMachine *TM = createTargetMachine(Argv[0]);
     if (!TM) exit(EXIT_FAILURE);
 
+    using OptimizationLevel = typename PassBuilder::OptimizationLevel;
+    OptimizationLevel optLevel;
+    switch (OptLevel) {
+        case 0:  optLevel = OptimizationLevel::O0; break;
+        case 1:  optLevel = OptimizationLevel::O2; break;
+        case 2:  optLevel = OptimizationLevel::Os; break;
+        default: optLevel = OptimizationLevel::O1; break;
+    }
+
+    namespace fs = std::filesystem;
+    auto dataDir = fs::path(getCacheDir()) / ".redrs";
+    std::filesystem::create_directories(dataDir);
+
     for (const auto &file : InputFiles) {
-        Compilation comp(file, TM, EmitLLVM);
+        Compilation comp(file, dataDir.string(), TM, optLevel, EmitLLVM);
         comp.run();
     }
 

@@ -182,18 +182,18 @@ void Compilation::run() {
     t.insertBreakpoint("tokenizer");
     Token *end_tok = nullptr;
     Token *tok = tokenizeFile(mainFile, &end_tok);
-    llvm::errs() << "Tokenize time: " << t.getTimeFromBreakpoint("tokenizer") << "ms\n";
+    llvm::outs() << "Tokenize time: " << t.getTimeFromBreakpoint("tokenizer") << "ms\n";
 
-dumpTokens(tok, "All the tokens:");
+    dumpTokens(tok, "All the tokens:");
 
     tok = parseHeader(tok);
 
     t.insertBreakpoint("preprocess");
     auto pp = Preprocessor(*this);
     tok = pp.preprocess(tok);
-    llvm::errs() << "Preprocess time: " << t.getTimeFromBreakpoint("preprocess") << "ms\n";
+    llvm::outs() << "Preprocess time: " << t.getTimeFromBreakpoint("preprocess") << "ms\n";
 
-dumpTokens(tok, "Preprocessed tokens:");
+    dumpTokens(tok, "Preprocessed tokens:");
 
     auto ext = llvm::sys::path::extension(mainFile);
     outputFilepath = std::string(mainFile).erase(mainFile.length() - ext.size());
@@ -202,13 +202,13 @@ dumpTokens(tok, "Preprocessed tokens:");
     t.insertBreakpoint("parse");
     auto parser = Parser(*this, codegen);
     auto prog = parser.parse(tok);
-    llvm::errs() << "Parse time: " << t.getTimeFromBreakpoint("parse") << "ms\n";
+    llvm::outs() << "Parse time: " << t.getTimeFromBreakpoint("parse") << "ms\n";
 
     t.insertBreakpoint("codegen");
     codegen.output();
-    llvm::errs() << "CodeGen time: " << t.getTimeFromBreakpoint("codegen") << "ms\n";
+    llvm::outs() << "CodeGen time: " << t.getTimeFromBreakpoint("codegen") << "ms\n";
 
     t.insertBreakpoint("link");
     if (!emitIr) link(codegen.import_libs);
-    llvm::errs() << "Link time: " << t.getTimeFromBreakpoint("link") << "ms\n";
+    llvm::outs() << "Link time: " << t.getTimeFromBreakpoint("link") << "ms\n";
 }

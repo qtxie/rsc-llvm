@@ -76,9 +76,10 @@ public:
         std::string msg = llvm::formatv(getDiagnosticText(diag_id), std::forward<Args>(args)...).str();
         llvm::SourceMgr::DiagKind kind = getDiagnosticKind(diag_id);
         srcMgr.PrintMessage(llvm::SMLoc::getFromPointer(loc), kind, msg);
-        if (kind == llvm::SourceMgr::DK_Error)
+        if (kind == llvm::SourceMgr::DK_Error) {
             assert(false);
-            //exit(EXIT_FAILURE);
+            exit(EXIT_FAILURE);
+        }
     }
 
     template <typename... Args>

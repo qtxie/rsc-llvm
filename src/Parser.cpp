@@ -518,7 +518,6 @@ void Parser::resolveDeclarations(Context *ctx) {
     curCtx = ctx;
     for (auto const &val : ctx->decls) {
         Type *ty = (Type *)val.second;
-        //llvm::errs() << ty->tok->str() << "\n";
         if (!resolveStruct(ty, ctx) && ty->id == NodeContext) {
             resolveDeclarations((Context *)ty);
             curCtx = ctx;
@@ -771,7 +770,7 @@ Node * Parser::checkArgType(Node *arg, Type *expected) {
     if (arg->id == NodeVar) {
         ty = ((Variable *)arg)->type;
     }
-    llvm::errs() << "check type: " << NodeName[ty->id] << " " << NodeName[expected->id] << '\n';
+    LOG() << NodeName[ty->id] << " " << NodeName[expected->id] << '\n';
     const auto res = (ty->id == expected->id) ? tc_same : TypeConv[ty->id][expected->id];
     if (res > tc_i_ff)
         comp.error(arg->tok, err_expected_type, TypeName[expected->id], TypeName[ty->id]);
@@ -860,7 +859,6 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
                 node = findDecl(tok, &ctx);
                 if (!node) comp.error(tok, err_undeclared_name, tok->str());
             }
-            llvm::errs() << "node: " << NodeName[node->id] << '\n'; 
             if (node->id == TypeFunc) {
                 node = parseFnCall((Function *)node, tok, &tok);
             }
@@ -993,26 +991,27 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
 }
 
 Node * Parser::parseCodeBlock(Token *tok, Context *ctx, bool is_func_body) {
-llvm::errs() << "====== ParseProgram start =======\n";
+    LOG() << "start\n";
 
     curCtx = ctx;
     tok = collectDeclarations(tok, ctx, is_func_body, is_func_body);
 
-dumpTokens(tok, "After collectDeclarations");
+    dumpTokens(tok, "After collectDeclarations");
 
     resolveDeclarations(ctx);
 
-llvm::errs() << "parseCode start =======\n";
+    LOG() << "parseCode start\n";
 
     Node *ast = parseCode(tok, &tok, ctx, is_func_body);
 
-dumpAst(ast);
+    LOG() << "parseCode end\n";
+
+    dumpAst(ast);
 
     parseFunctions(ctx);
     curCtx = ctx;
 
-llvm::errs() << "======= ParseProgram end =======\n";
-
+    LOG() << "end\n";
     return ast;
 }
 
@@ -1034,7 +1033,7 @@ Program * Parser::parse(Token *tok) {
     return program;
 }
 
-void dumpFunction(Function *func) {
+void dumpFunction(Function *func) {if constexpr (verbose >= 4) {
     llvm::errs() << func->tok->str() << ":\n";
     llvm::errs() << "Params: " << func->n_params << " ";
     auto p = func->params;
@@ -1049,16 +1048,16 @@ void dumpFunction(Function *func) {
         p = p->next;
     }
     llvm::errs() << '\n';
-}
+}}
 
-static void dumpBinOp(Node *node, DumpState s) {
+static void dumpBinOp(Node *node, DumpState s) {if constexpr (verbose >= 4) {
     BinaryOp *op = (BinaryOp *)node;
     dumpAst(op->lhs, s);
     llvm::errs() << NodeName[op->id] << " ";
     dumpAst(op->rhs, s);
-}
+}}
 
-void dumpAst(Node *node, DumpState s) {
+void dumpAst(Node *node, DumpState s) {if constexpr (verbose >= 4) {
     using llvm::errs;
     auto i = s.indent;
     auto indent = [i]{
@@ -1112,8 +1111,9 @@ void dumpAst(Node *node, DumpState s) {
             break;
         }
         n++;
+        s.nNode++;
         node = node->next;
     }
     s.indent--;
-    if (s.indent == 0) errs() << "\nNumber of AST Node: " << n << '\n';
-}
+    if (s.indent == 0) errs() << "\n+++++Number of AST Node+++++: " << n << " " << s.nNode << '\n';
+}}

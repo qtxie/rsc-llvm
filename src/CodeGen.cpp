@@ -47,7 +47,6 @@ CodeGen::CodeGen(Compilation &c) : comp(c) {
 }
 
 llvm::Value * CodeGen::readVariable(Variable *var) {
-    llvm::errs() << "readVariable: " << var->tok->str() << " " << var->ir << '\n';
     return builder->CreateLoad(var->ir);
 }
 
@@ -111,7 +110,8 @@ llvm::Value * CodeGen::emitBinOp(Node *node) {
 }
 
 llvm::Value * CodeGen::emitExpr(Node *node) {
-    llvm::errs() << "emitExpr: " << NodeName[node->id] << '\n';
+    LOG() << NodeName[node->id] << '\n';
+
     llvm::Value *val = nullptr;
     switch (node->id)
     {
@@ -130,7 +130,7 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
 void CodeGen::emitCode(Node *node) {
     while (node) {
         llvm::Value *inst = nullptr;
-        llvm::errs() << "emitCode " << NodeName[node->id] << '\n';
+        LOG() << NodeName[node->id] << '\n';
         switch (node->id)
         {
         case NodeReturn: builder->CreateRet(emitExpr(((Return *)node)->expr)); break;

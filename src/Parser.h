@@ -8,6 +8,7 @@
 #ifndef RED_SYSTEM_PARSER_H
 #define RED_SYSTEM_PARSER_H
 
+#include "Logger.h"
 #include "Utils.h"
 #include "StringMap.h"
 #include <llvm/ADT/BitmaskEnum.h>
@@ -182,6 +183,8 @@ private:
 
     NodeBuffer nodeBuf;
 
+    Logger LOG;
+
 public:
     Parser(Compilation &c, CodeGen &_codegen) : Utils(c), codegen(_codegen), curTypeId(1000) {};
     Parser(Compilation &&) = delete;  // prevents rvalue binding
@@ -269,10 +272,10 @@ private:
 };
 
 
-
 struct DumpState {
     bool is_bin_op;
     uint32_t indent;
+    uint32_t nNode;
 };
 void dumpFunction(Function *func);
 void dumpAst(Node *node, DumpState s = {});

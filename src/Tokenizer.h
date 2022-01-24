@@ -11,6 +11,7 @@
 #include <cctype>
 #include "LLVM.h"
 #include "Token.h"
+#include "Logger.h"
 
 class Compilation;
 
@@ -18,6 +19,7 @@ class Tokenizer
 {
 private:
     Compilation &comp;
+    Logger LOG;
 
 public:
     Tokenizer(Compilation &c) : comp(c) {};

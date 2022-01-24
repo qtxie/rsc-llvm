@@ -31,6 +31,8 @@ private:
     llvm::Type *f32_ty;
     llvm::Type *f64_ty;
 
+    Logger LOG;
+
 public:
     CodeGen(Compilation &c);
     ~CodeGen() {delete M;}

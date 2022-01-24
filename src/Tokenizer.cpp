@@ -507,7 +507,7 @@ Token * Tokenizer::tokenError(const char *loc, unsigned diag_id, Args &&... args
     return newToken(comp.tokBuf, TokenIdUnknown, loc, 0);
 }
 
-void dumpTokens(Token *tok, const char *msg) {
+void dumpTokens(Token *tok, const char *msg) {if constexpr (verbose >= 3) {
     llvm::errs() << "\n" << msg << "\n";
     int n = 10;
     while (tok) {
@@ -519,4 +519,4 @@ void dumpTokens(Token *tok, const char *msg) {
         tok = tok->next;
     }
     llvm::errs() << "\n\n";
-}
+}}

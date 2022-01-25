@@ -120,7 +120,7 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     case NodeVar:    val = readVariable((Variable *)node); break;
     case NodeIdent:  val = readVariable(((Identifier *)node)->var); break;
     case TypeInt:    val = llvm::ConstantInt::get(i32_ty, ((Type *)node)->data.value); break;
-    case TypeArray:  val = builder->CreateGlobalStringPtr(node->tok->str(), "", 0, M); break;
+    case TypeCStr:   val = builder->CreateGlobalStringPtr(node->tok->str(), "", 0, M); break;
     default:         val = emitBinOp(node); break;
     }
     curVal = val;
@@ -294,7 +294,8 @@ llvm::Type * CodeGen::llvmType(const Node *node) {
     case TypeBool:   return bool_ty;
     case TypeByte:   return byte_ty;
     case TypePtr:    return llvmType(ty->data.type)->getPointerTo();
-    case TypeArray:  return llvm::ArrayType::get(byte_ty, ty->tok->len);
+    case TypeCStr:   return byte_ty->getPointerTo();
+    //case TypeArray:  return llvm::ArrayType::get(byte_ty, ty->tok->len);
     case TypeFunc: 
 
     default:

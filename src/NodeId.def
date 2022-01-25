@@ -5,6 +5,8 @@
 #define TYPE(ID, STR) Type ## ID,
 #endif
 
+// @@ order of the types are important!
+// see TypeConv array in Parser.cpp
 TYPE(Void,               "void!")
 TYPE(Null,               "null!")
 TYPE(Bool,               "logic!")
@@ -16,6 +18,7 @@ TYPE(Enum,               "enum!")
 TYPE(Ptr,                "pointer!")
 TYPE(Struct,             "struct!")
 TYPE(Func,               "function!")
+TYPE(CStr,               "c-string!")
 TYPE(Binary,             "binary!")
 TYPE(Array,              "array!")
 TYPE(Alias,              "alias!")

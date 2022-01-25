@@ -878,7 +878,7 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
                 comp.error(tok, err_float_overflow);
             break;
         case TokenIdString:
-            ty = newNode<Type>(TypeArray, tok);
+            ty = newNode<Type>(TypeCStr, tok);
             node = ty;
             break;
         case TokenIdLParen:

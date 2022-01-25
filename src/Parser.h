@@ -271,7 +271,7 @@ private:
     T * copyNode(const T *node) {return new (nodeBuf.alloc(sizeof(T))) T{*node};}
 };
 
-
+// For debugging
 struct DumpState {
     bool is_bin_op;
     uint32_t indent;

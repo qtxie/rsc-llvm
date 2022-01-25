@@ -20,12 +20,6 @@
 
 using llvm::SMLoc;
 
-enum BuildMode {
-    BuildModeDebug,
-    BuildModeRelease,    // prefer fast code than small code
-    BuildModeSmallRelease
-};
-
 using OptimizationLevel = typename llvm::PassBuilder::OptimizationLevel;
 
 class Compilation {
@@ -41,7 +35,6 @@ public:
     TokenBuffer tokBuf;
 
     // Configuration
-    BuildMode buildMode;
     void *baseAddress;
     int arch;
     int abi;

@@ -39,6 +39,7 @@ public:
     CodeGen(Compilation &&) = delete;  // prevents rvalue binding
 
     llvm::Value * readVariable(Variable *var);
+    llvm::Value * getPointer(Node *node);
 
     llvm::Value * emitIf(If *node);
     llvm::Value * emitCall(FnCall *call);
@@ -47,10 +48,14 @@ public:
 
     void emitCode(Node *node);
     void emitGlobalVar(Variable *var);
-    void emitFunction(Function *fn);
     void emitMainFunc(Node *ast);
+    void emitFunc(Function *fn);
+    void emitFunctions(Context *ctx);
+
+    llvm::Value * createFunc(Function *fn);
 
     void output();
+    void emit(Program *prog);
 
     llvm::SmallSet<StringRef, 4> import_libs;
 

@@ -50,6 +50,10 @@ llvm::Value * CodeGen::readVariable(Variable *var) {
     return builder->CreateLoad(var->ir);
 }
 
+llvm::Value * CodeGen::getPointer(Node *node) {
+    Variable *var = (Variable *)node;
+    return var->ir;
+}
 
 void CodeGen::emitGlobalVar(Variable *var) {
     auto v = new llvm::GlobalVariable(
@@ -119,6 +123,7 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     case NodeFnCall: val = emitCall((FnCall *)node); break;
     case NodeVar:    val = readVariable((Variable *)node); break;
     case NodeIdent:  val = readVariable(((Identifier *)node)->var); break;
+    case NodePtr:    val = getPointer(((Pointer *)node)->value); break;
     case TypeInt:    val = llvm::ConstantInt::get(i32_ty, ((Type *)node)->data.value); break;
     case TypeCStr:   val = builder->CreateGlobalStringPtr(node->tok->str(), "", 0, M); break;
     default:         val = emitBinOp(node); break;
@@ -156,10 +161,10 @@ llvm::FunctionType * CodeGen::createFuncType(Function *fn) {
     return llvm::FunctionType::get(result_ty, params_ty, fn->attrs.value & FuncVariadic);
 }
 
-void CodeGen::emitFunction(Function *fn) {
+llvm::Value * CodeGen::createFunc(Function *fn) {
     auto func_ty = createFuncType(fn);
     auto func = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, fn->import_name->str(), *M);
-    fn->ir = curFunc = func;
+    fn->ir = func;
 
     if (auto lib = fn->data.import_lib) import_libs.insert(lib->str());
 
@@ -172,8 +177,14 @@ void CodeGen::emitFunction(Function *fn) {
     else
         func->setCallingConv(llvm::CallingConv::Fast);
 
+    return func;
+}
+
+void CodeGen::emitFunc(Function *fn) {
     if (fn->data.import_lib) return;
 
+    llvm::Function *func = llvm::cast<llvm::Function>(fn->ir);
+    curFunc = func;
     auto entry_block = BasicBlock::Create(Ctx, "entry", func);
     setCurrentBasicBlock(entry_block);
 
@@ -200,6 +211,17 @@ void CodeGen::emitFunction(Function *fn) {
 
     emitCode(fn->body.node);
     builder->CreateRet(curVal);
+}
+
+void CodeGen::emitFunctions(Context *ctx) {
+    for (auto const &val : ctx->decls) {
+        Type *ty = (Type *)val.second;
+        if (ty->id == TypeFunc) {
+            emitFunc((Function *)ty);
+        } else if (ty->id == NodeContext) {
+            emitFunctions((Context* )ty);
+        }
+    }
 }
 
 void CodeGen::emitMainFunc(Node *ast) {
@@ -280,6 +302,12 @@ void CodeGen::output() {
     // Code generation phase
     codegen_pm.run(*M);
     out_file->keep();
+}
+
+void CodeGen::emit(Program *prog) {
+    emitMainFunc(prog->ast);
+    emitFunctions(prog->ctx);
+    output();
 }
 
 llvm::Type * CodeGen::llvmType(const Node *node) {

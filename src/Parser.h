@@ -127,6 +127,10 @@ struct Unary : Node {
     Node *value;
 };
 
+struct Pointer : Node {
+    Node *value;
+};
+
 struct MemberAccess : Node {
     Node *member;
 };

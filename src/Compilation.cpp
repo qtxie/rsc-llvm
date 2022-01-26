@@ -205,7 +205,7 @@ void Compilation::run() {
     llvm::outs() << "Parse time: " << t.getTimeFromBreakpoint("parse") << "ms\n";
 
     t.insertBreakpoint("codegen");
-    codegen.output();
+    codegen.emit(prog);
     llvm::outs() << "CodeGen time: " << t.getTimeFromBreakpoint("codegen") << "ms\n";
 
     t.insertBreakpoint("link");

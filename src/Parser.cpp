@@ -558,7 +558,7 @@ void Parser::parseFunctions(Context *ctx) {
             if (fn->body.token) fn->body.node = parseCodeBlock(fn->body.token, &fn_ctx, true);
             curCtx = ctx;
 
-            codegen.emitFunction(fn);
+            codegen.createFunc(fn);
 
         } else if (ty->id == NodeContext) {
             parseFunctions((Context* )ty);
@@ -608,8 +608,8 @@ Token * Parser::parseImport(Token *tok, Context *ctx) {
     return tok->next;
 }
 
-// 1. Collect function, import function, alias, context and enum
-// 2. Recognize path! and get-path!
+// * Collect function, import function, alias, context and enum
+// * Recognize path! and get-path!
 Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block, bool is_func_ctx) {
     SmallVector<std::pair<Token *, uint32_t>> bracket;
     SmallVector<std::pair<Token *, uint32_t>> paren;
@@ -863,7 +863,16 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
                 node = parseFnCall((Function *)node, tok, &tok);
             }
             break;
-
+        case TokenIdGetWord:
+            node = findVar(tok, &ctx);
+            if (node || ((node = findDecl(tok, &ctx)) && node->id == TypeFunc)) {
+                auto ptr = newNode<Pointer>(NodePtr, tok);
+                ptr->value = node;
+                node = ptr;
+            } else {
+                comp.error(tok, err_undeclared_name, tok->str());
+            }
+            break;
         case TokenIdInteger:
         case TokenIdHex:
             ty = newNode<Type>(TypeInt, tok);
@@ -1025,8 +1034,6 @@ Program * Parser::parse(Token *tok) {
     curGlobal = &global;
 
     program->ast = parseCodeBlock(tok, ctx);
-
-    codegen.emitMainFunc(program->ast);
 
     program->functions = func.next;
     program->data = global.next;

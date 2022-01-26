@@ -52,7 +52,7 @@ public:
     void emitFunc(Function *fn);
     void emitFunctions(Context *ctx);
 
-    llvm::Value * createFunc(Function *fn);
+    llvm::Value * createFunc(Function *fn, Context *ctx);
 
     void output();
     void emit(Program *prog);
@@ -60,6 +60,8 @@ public:
     llvm::SmallSet<StringRef, 4> import_libs;
 
 private:
+    void mangleName(Token *tok, Context *ctx, std::string &result);
+
     llvm::BasicBlock * createBasicBlock(const llvm::Twine &name, llvm::BasicBlock *insertBefore = nullptr) {
         return llvm::BasicBlock::Create(Ctx, name, curFunc, insertBefore);
     }

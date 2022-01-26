@@ -134,7 +134,7 @@ static const TypeConvResult TypeConv[TypeType][TypeType] = {
 
 Variable * Parser::addVar(Context *ctx, Token *name, bool is_local) {
     auto node = newNode<Variable>(NodeVar, name);
-    auto& vars = ctx->vars;
+    auto& vars = ctx->decls;
     auto const & [keyval, is_new] = vars.insert({name->str(), node});
     if (!is_new && is_local)
         comp.error(name, err_symbol_declared, name);
@@ -164,18 +164,7 @@ Node * Parser::findDecl(Token *name, Context **ctx_out) {
 }
 
 Variable * Parser::findVar(Token *name, Context **ctx_out) {
-    auto ctx = curCtx;
-    do {
-        auto& vars = ctx->vars;
-        auto it = vars.find(name->str());
-        if (it != vars.end()) {
-            *ctx_out = ctx;
-            return (Variable *)it->second;
-        } else {
-            ctx = ctx->parent;
-        }
-    } while (ctx);
-    return nullptr;
+    return (Variable *)findDecl(name, ctx_out);
 }
 
 Context * Parser::findContext(Token *tok) {
@@ -292,7 +281,7 @@ Token *Parser::parseFuncSpec(Token *tok, Function *func, bool is_collect) {
 
     // attribute block
     if (tok->id == TokenIdLBracket) {
-        auto attrs = func->attrs.value;
+        auto attrs = func->attrs;
         do {
             using namespace llvm;
             tok = tok->next;
@@ -302,7 +291,7 @@ Token *Parser::parseFuncSpec(Token *tok, Function *func, bool is_collect) {
             else if (tok->id == TokenIdRBracket) break;
             else comp.error(tok, err_invalid_func);
         } while (tok->id != TokenIdEof);
-        func->attrs.value = attrs;
+        func->attrs = attrs;
         tok = tok->next;
     }
 
@@ -426,7 +415,7 @@ Node * Parser::collectDecl(Token *tok, Token **rest) {
     }
 
     if (tok->id == TokenIdContext) {
-        Context *ctx = newContext(tok);
+        Context *ctx = newContext(name);
         ctx->parent = curCtx;
         curCtx = ctx;
         expect(tok->next, TokenIdLBracket, '[');
@@ -558,7 +547,7 @@ void Parser::parseFunctions(Context *ctx) {
             if (fn->body.token) fn->body.node = parseCodeBlock(fn->body.token, &fn_ctx, true);
             curCtx = ctx;
 
-            codegen.createFunc(fn);
+            codegen.createFunc(fn, ctx);
 
         } else if (ty->id == NodeContext) {
             parseFunctions((Context* )ty);
@@ -597,7 +586,7 @@ Token * Parser::parseImport(Token *tok, Context *ctx) {
             func->import_name = tok;
             tok = skip(tok, TokenIdString, "string");
             
-            func->attrs.value = attr;
+            func->attrs = static_cast<FuncAttr>(attr | FuncExtern);
             func->data.import_lib = lib_name;
             tok = parseFuncSpec(tok, func, true);
             addDecl(ctx, func->tok, func);
@@ -716,23 +705,28 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
     Token *next = nullptr;
     Variable *var = nullptr;
     Context *saved_ctx = curCtx;
+    is_setpath = false;
 
     // resolve first word in the path
     do {
         Context *ctx = nullptr;
-        if (var = findVar(tok, &ctx)) break;
-        if (ctx = findContext(tok)) {
-            curCtx = ctx;
+        var = findVar(tok, &ctx);
+        if (var) {
+            if (var->id == NodeContext) curCtx = (Context *)var;
+            else break;
         } else {
             comp.error(tok, err_undeclared_name, tok->str());
         }
+
         next = tok->next;
         tok = next->next;
     } while (next->id == TokenIdSlash);
 
     curCtx = saved_ctx;
-    if (!var)
-        comp.error(tok, err_expected, "member in context");
+    if (!var) comp.error(tok, err_expected, "member in context");
+
+    if (var->id == TypeFunc) return parseFnCall((Function *)var, tok, rest);
+    if (var->id != NodeVar) comp.error(tok, err_expected, "variable");
 
     auto type_id = var->type->id;
     Unary *node = (Unary *)var;
@@ -755,7 +749,7 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
 
     is_setpath = (tok->id == TokenIdSetWord);
     *rest = tok;
-    // for case: a/keyword: or a/(n + 1):
+    // for case: `a/keyword:` or `a/(n + 1):`
     if (!is_setpath && tok->next->id == TokenIdSetColon) {
         *rest = tok->next;
         is_setpath = true;
@@ -782,7 +776,7 @@ Node * Parser::parseFnCall(Function *fn, Token *tok, Token **rest) {
     call->fn = fn;
     Node head{};
     Node *cur = &head;
-    if (fn->attrs.value & FuncVariadic) {
+    if (fn->attrs & FuncVariadic) {
         if (tok->next->id == TokenIdLBracket) {
             tok = tok->next;
             do {
@@ -848,27 +842,34 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
     Context *ctx = nullptr;
     Node *node = nullptr;
     Type *ty;
+    bool is_set;
     switch (tok->id) {
         case TokenIdWord:
-            node = findVar(tok, &ctx);
-            if (node) {
+            LOG() << tok->str() << '\n';
+            node = findDecl(tok, &ctx);
+            if (!node) comp.error(tok, err_undeclared_name, tok->str());
+            if (node->id == NodeVar) {
                 auto ident = newNode<Identifier>(NodeIdent, tok);
                 ident->var = (Variable *)node;
                 node = ident;
-            } else {
-                node = findDecl(tok, &ctx);
-                if (!node) comp.error(tok, err_undeclared_name, tok->str());
-            }
-            if (node->id == TypeFunc) {
+            } else if (node->id == TypeFunc) {
                 node = parseFnCall((Function *)node, tok, &tok);
             }
             break;
+        case TokenIdPath:
+            node = parsePath(tok, &tok, is_set);
+            if (is_set) comp.error(tok, err_invalid_assign);
+            break;
         case TokenIdGetWord:
-            node = findVar(tok, &ctx);
-            if (node || ((node = findDecl(tok, &ctx)) && node->id == TypeFunc)) {
-                auto ptr = newNode<Pointer>(NodePtr, tok);
-                ptr->value = node;
-                node = ptr;
+            node = findDecl(tok, &ctx);
+            if (node) {
+                if (node->id == NodeVar || node->id == TypeFunc) {
+                    auto ptr = newNode<Pointer>(NodePtr, tok);
+                    ptr->value = node;
+                    node = ptr;
+                } else {
+                    comp.error(tok, err_expected, "variable or function");
+                }
             } else {
                 comp.error(tok, err_undeclared_name, tok->str());
             }
@@ -914,6 +915,7 @@ Node * Parser::parseAssignment(Token *tok, Token **rest) {
     if (tok->id == TokenIdSetWord) {
         node = findVar(tok, &ctx);
         if (!node) node = addVar(curCtx, tok);
+        else if (node->id != NodeVar) comp.error(tok, err_symbol_declared, tok->str());
         is_set = true;
     } else if (tok->id == TokenIdPath) {
         node = parsePath(tok, &tok, is_set);
@@ -1007,12 +1009,11 @@ Node * Parser::parseCodeBlock(Token *tok, Context *ctx, bool is_func_body) {
 
     dumpTokens(tok, "After collectDeclarations");
 
+    // resolve struct and function spec
     resolveDeclarations(ctx);
 
     LOG() << "parseCode start\n";
-
     Node *ast = parseCode(tok, &tok, ctx, is_func_body);
-
     LOG() << "parseCode end\n";
 
     dumpAst(ast);
@@ -1028,18 +1029,11 @@ Program * Parser::parse(Token *tok) {
     Program *program = newNode<Program>(NodeProgram, tok);
     Context *ctx = newContext(tok);
     program->ctx = ctx;
-    Node func{};
-    Node global{};
-    curFunc = &func;
-    curGlobal = &global;
-
     program->ast = parseCodeBlock(tok, ctx);
-
-    program->functions = func.next;
-    program->data = global.next;
     return program;
 }
 
+// For debugging
 void dumpFunction(Function *func) {if constexpr (verbose >= 4) {
     llvm::errs() << func->tok->str() << ":\n";
     llvm::errs() << "Params: " << func->n_params << " ";

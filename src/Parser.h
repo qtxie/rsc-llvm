@@ -32,7 +32,10 @@ enum FuncAttr {
     FuncCustom   = 0x0040,
     FuncCatch    = 0x0080,
     FuncInline   = 0x0100,
-    LLVM_MARK_AS_BITMASK_ENUM(/* LargestValue = */ FuncInline)
+    FuncExtern   = 0x0200,
+
+    FuncAttrEnd,
+    LLVM_MARK_AS_BITMASK_ENUM(/* LargestValue = */ FuncAttrEnd)
 };
 
 enum VarAttr {
@@ -97,10 +100,7 @@ struct Function : Type {
         Token *token;
         Node  *node;
     } body;
-    union {
-        Token *token;
-        FuncAttr value;
-    } attrs;
+    FuncAttr attrs;
     IrValue *ir;
 };
 
@@ -157,8 +157,7 @@ struct Either : Node {
 
 struct Context : Node {
     Context *parent;
-    HashMap decls;             // for struct, enum, function, alias
-    HashMap vars;              // for variables
+    HashMap decls;             // for struct, enum, function, alias, context, variable
 };
 
 struct Program : Node {
@@ -179,8 +178,6 @@ private:
     typedef Buffer<unsigned char, 1024 * 1024> NodeBuffer; 
 
     uint32_t curTypeId;
-    Node    *curFunc;
-    Node    *curGlobal;
     Context *curCtx;
     SmallVector<uint32_t> tids;  // detect struct circular reference
     SmallVector<Token *> import_libs;

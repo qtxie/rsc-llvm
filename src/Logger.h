@@ -4,7 +4,7 @@
 #include <source_location>
 #include <llvm/Support/raw_ostream.h>
 
-constexpr int verbose = 0;
+constexpr int verbose = 1;
 
 class Logger {
 public:

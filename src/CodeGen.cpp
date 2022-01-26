@@ -158,18 +158,30 @@ llvm::FunctionType * CodeGen::createFuncType(Function *fn) {
         params_ty.push_back(llvmType(params));
         params = params->next;
     }
-    return llvm::FunctionType::get(result_ty, params_ty, fn->attrs.value & FuncVariadic);
+    return llvm::FunctionType::get(result_ty, params_ty, fn->attrs & FuncVariadic);
 }
 
-llvm::Value * CodeGen::createFunc(Function *fn) {
+
+void CodeGen::mangleName(Token *tok, Context *ctx, std::string &result) {
+    result = tok->str().str();
+    while (ctx->parent) {
+        result.insert(result.begin(), '/');
+        result.insert(0, ctx->tok->loc, ctx->tok->len);
+        ctx = ctx->parent;
+    }
+}
+
+llvm::Value * CodeGen::createFunc(Function *fn, Context *ctx) {
     auto func_ty = createFuncType(fn);
-    auto func = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, fn->import_name->str(), *M);
+    std::string name;
+    mangleName(fn->import_name, ctx, name);
+    auto func = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, name, *M);
     fn->ir = func;
 
     if (auto lib = fn->data.import_lib) import_libs.insert(lib->str());
 
     // process attributes
-    auto attrs = fn->attrs.value;
+    auto attrs = fn->attrs;
     if (attrs & FuncStdcall)
         func->setCallingConv(llvm::CallingConv::X86_StdCall);
     else if (attrs & FuncVariadic || attrs & FuncCdecl)

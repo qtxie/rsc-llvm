@@ -281,6 +281,7 @@ struct DumpState {
     uint32_t nNode;
 };
 void dumpFunction(Function *func);
+void dumpNode(Node *node, DumpState &s);
 void dumpAst(Node *node, DumpState s = {});
 
 #endif /* RED_SYSTEM_PARSER_H */

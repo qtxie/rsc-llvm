@@ -250,15 +250,23 @@ Token * Parser::parseLocal(Token *tok, Function *func) {
             total += n;
             auto name = ident.next;
             auto type = parseType(tok, &tok);
-            while (n--) {
+            while (n) {
                 cur = cur->next = copyNode<Type>(type);
                 cur->tok = name;
                 name = name->next;
+                n--;
             }
             t = &ident;
-            n = 0;
         } else {
             comp.error(tok, err_invalid_func);
+        }
+    }
+    if (n) {    // untyped variables
+        total += n;
+        auto name = ident.next;
+        while (n--) {
+            cur = cur->next = newNode<Node>(TypeVoid, name);
+            name = name->next;
         }
     }
     func->locals = head.next;
@@ -537,8 +545,17 @@ const Type * Parser::addVarType(Node *node) {
 
 void Parser::addTypeInfo(Node *node) {
     while (node) {
-        if (node->id == NodeAssign)
+        switch (node->id)
+        {
+        case NodeAssign:
             addVarType(node);
+            break;
+        case NodeIf:
+            addTypeInfo(((If *)node)->body);
+            break;
+        default:
+            break;
+        }
         node = node->next;
     }
 }
@@ -1078,68 +1095,86 @@ void dumpFunction(Function *func) {if constexpr (verbose >= 4) {
     llvm::errs() << '\n';
 }}
 
-static void dumpBinOp(Node *node, DumpState s) {if constexpr (verbose >= 4) {
+static void dumpBinOp(Node *node, DumpState &s) {if constexpr (verbose >= 4) {
     BinaryOp *op = (BinaryOp *)node;
-    dumpAst(op->lhs, s);
+    dumpNode(op->lhs, s);
     llvm::errs() << NodeName[op->id] << " ";
-    dumpAst(op->rhs, s);
+    dumpNode(op->rhs, s);
 }}
 
-void dumpAst(Node *node, DumpState s) {if constexpr (verbose >= 4) {
+static void dumpAssign(Node *node, DumpState &s) {if constexpr (verbose >= 4) {
+    BinaryOp *op = (BinaryOp *)node;
+    dumpNode(op->lhs, s);
+    dumpNode(op->rhs, s);
+}}
+
+void dumpNode(Node *node, DumpState &s) {if constexpr (verbose >= 4) {
     using llvm::errs;
     auto i = s.indent;
     auto indent = [i]{
         uint32_t n = i; 
         while (n--) errs() << "  ";
     };
+    // errs() << NodeName[node->id] << "--";
+    s.nNode++;
+    switch (node->id)
+    {
+    case NodeAssign: 
+        s.is_bin_op = true;
+        dumpAssign(node, s);
+        s.is_bin_op = false;
+        break;
+    case NodeIf: 
+        indent();
+        errs() << "If Statement:\n";
+        errs() << "Conditional: ";
+        dumpAst(((If *)node)->cond, s);
+        errs() << "\nBody: ";
+        dumpAst(((If *)node)->body, s);
+        errs() << '\n';
+        break;
+    case NodeReturn:
+        errs() << node->tok->str() << " ";
+        dumpAst(((Return *)node)->expr, s);
+        errs() << '\n';
+        break;
+    case TypeInt: 
+        errs() << node->tok->str() << " ";
+        break;
+
+    case NodeAdd: case NodeSub: case NodeDiv: case NodeMul: case NodeModulo: case NodeRemainder:
+    case NodeLessEq: case NodeLess: case NodeEq: case NodeGreaterEq: case NodeGreater: case NodeNotEq:
+    case NodeShiftLeft: case NodeShiftRight: case NodeShiftRightLogical: case NodeAnd: case NodeOr: case NodeXor:
+        s.is_bin_op = true;
+        dumpBinOp(node, s);
+        s.is_bin_op = false;
+        break;
+    case NodeIdent:
+        errs() << node->tok->str() << " ";
+        break;
+    case NodeVar:
+        errs() << node->tok->str() << " ";
+        break;
+    case NodeFnCall:
+        errs() << "call: " << node->tok->str() << "( ";
+        dumpAst(((FnCall *)node)->args, s);
+        errs() << ") ";
+        if (!s.is_bin_op) errs() << '\n';
+        break;
+    default:
+        break;
+    }
+}}
+
+void dumpAst(Node *node, DumpState s) {if constexpr (verbose >= 4) {
+    using llvm::errs;
 
     if (s.indent == 0) errs() << "+++++++++++dump AST+++++++++++" << "\n";
     uint32_t n = 0;
     s.indent++;
     while (node) {
-        // errs() << NodeName[node->id] << "--";
-        switch (node->id)
-        {
-        case NodeAssign: break;
-        case NodeIf: 
-            indent();
-            errs() << "If Statement:\n";
-            errs() << "Conditional: ";
-            dumpAst(((If *)node)->cond, s);
-            errs() << "\nBody: ";
-            dumpAst(((If *)node)->body, s);
-            errs() << '\n';
-            break;
-        case NodeReturn:
-            errs() << node->tok->str() << " ";
-            dumpAst(((Return *)node)->expr, s);
-            errs() << '\n';
-            break;
-        case TypeInt: 
-            errs() << node->tok->str() << " ";
-            break;
-
-        case NodeAdd: case NodeSub: case NodeDiv: case NodeMul: case NodeModulo: case NodeRemainder:
-        case NodeLessEq: case NodeLess: case NodeEq: case NodeGreaterEq: case NodeGreater: case NodeNotEq:
-        case NodeShiftLeft: case NodeShiftRight: case NodeShiftRightLogical: case NodeAnd: case NodeOr: case NodeXor:
-            s.is_bin_op = true;
-            dumpBinOp(node, s);
-            s.is_bin_op = false;
-            break;
-        case NodeIdent:
-            errs() << node->tok->str() << " ";
-            break;
-        case NodeFnCall:
-            errs() << "call: " << node->tok->str() << "( ";
-            dumpAst(((FnCall *)node)->args, s);
-            errs() << ") ";
-            if (!s.is_bin_op) errs() << '\n';
-            break;
-        default:
-            break;
-        }
         n++;
-        s.nNode++;
+        dumpNode(node, s);
         node = node->next;
     }
     s.indent--;

@@ -45,9 +45,10 @@ public:
     llvm::Value * emitCall(FnCall *call);
     llvm::Value * emitBinOp(Node *node);
     llvm::Value * emitExpr(Node *node);
+    llvm::Value * emitAssignment(Assignment *node);
+    llvm::GlobalVariable * emitGlobalVar(Variable *var);
 
     void emitCode(Node *node);
-    void emitGlobalVar(Variable *var);
     void emitMainFunc(Node *ast);
     void emitFunc(Function *fn);
     void emitFunctions(Context *ctx);

@@ -47,6 +47,7 @@ CodeGen::CodeGen(Compilation &c) : comp(c) {
 }
 
 llvm::Value * CodeGen::readVariable(Variable *var) {
+    LOG() << var << " " << var->tok->str() << " " << var->attrs << '\n';
     return builder->CreateLoad(var->ir);
 }
 
@@ -55,10 +56,13 @@ llvm::Value * CodeGen::getPointer(Node *node) {
     return var->ir;
 }
 
-void CodeGen::emitGlobalVar(Variable *var) {
+llvm::GlobalVariable * CodeGen::emitGlobalVar(Variable *var) {
     auto v = new llvm::GlobalVariable(
         *M, llvmType(var->type), false, GlobalValue::PrivateLinkage, nullptr, var->tok->str());
     var->ir = v;
+    var->attrs = static_cast<VarAttr>(var->attrs | VarGlobal);
+    LOG() << var << '\n';
+    return v;
 }
 
 llvm::Value * CodeGen::emitIf(If *node) {
@@ -132,6 +136,26 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     return val;
 }
 
+llvm::Value * CodeGen::emitAssignment(Assignment *node) {
+    Variable *left = (Variable *)node->lhs;
+    LOG() << left->tok->str() << left->ir << '\n';
+    llvm::Value *val = nullptr;
+    if (node->rhs->id == NodeAssign) {
+        val = emitAssignment((Assignment *)node->rhs);
+    } else {
+        val = emitExpr(node->rhs);
+    }
+
+    if (left->ir) {
+
+    } else {         // declare global variable
+        auto var = emitGlobalVar(left);
+        if (llvm::isa<llvm::Constant>(val))
+            var->setInitializer(llvm::cast<llvm::Constant>(val));
+    }
+    return val;
+}
+
 void CodeGen::emitCode(Node *node) {
     while (node) {
         llvm::Value *inst = nullptr;
@@ -139,6 +163,7 @@ void CodeGen::emitCode(Node *node) {
         switch (node->id)
         {
         case NodeReturn: builder->CreateRet(emitExpr(((Return *)node)->expr)); break;
+        case NodeAssign: emitAssignment((Assignment *)node); break;
         default:
             emitExpr(node);
             break;

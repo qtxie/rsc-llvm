@@ -105,7 +105,7 @@ struct Function : Type {
 };
 
 struct Variable : Node {
-    Type *type;
+    const Type *type;
     Node *init_data;
     VarAttr attrs;
     int offset;     // for local variable
@@ -203,6 +203,8 @@ private:
     Unary *getStructMember(Unary *st, Token *tok);
 
     Node * checkArgType(Node *arg, Type *expected);
+    const Type * addVarType(Node *node);
+    void addTypeInfo(Node *node);
 
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
     Node * parseIf(Token *tok, Token **rest);
@@ -222,7 +224,7 @@ private:
     Node * parseCodeBlock(Token *tok, Context *ctx, bool is_func_body = false);
     void parseFunctions(Context *ctx);
 
-    const Type * collectType(Token *tok, Token **rest) {
+    const Type * collectAlias(Token *tok, Token **rest) {
         return parseType(tok, rest, false, true);
     }
     Node * collectDecl(Token *tok, Token **rest);

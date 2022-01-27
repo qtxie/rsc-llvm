@@ -407,7 +407,7 @@ Node * Parser::collectDecl(Token *tok, Token **rest) {
     if (tok->id == TokenIdAlias) {
         tok = tok->next;
         expect(tok, TokenIdWord, "word");
-        auto type = (Type *)collectType(tok, rest);
+        auto type = (Type *)collectAlias(tok, rest);
         type->tok = name;
         if (!type->tid) type->tid = curTypeId++;
         name->next->next = *rest;
@@ -515,6 +515,31 @@ void Parser::resolveDeclarations(Context *ctx) {
             parseFuncSpec(fn->spec, fn);
             dumpFunction(fn);
         }
+    }
+}
+
+const Type * Parser::addVarType(Node *node) {
+    if (node->id == NodeAssign) {
+        Assignment *assign = (Assignment *)node;
+        Variable *var = (Variable *) assign->lhs;
+        const Type *ty = addVarType(assign->rhs);
+        if (!var->type || var->type->id == TypeVoid)
+            var->type = ty;
+        //else check type
+        LOG() << var->tok->str() << " " << TypeName[var->type->id] << '\n';
+        return ty;
+    }
+    else if (node->id < TypeType) return (Type *)node;
+    else if (node->id == NodeFnCall) return ((FnCall*)node)->fn->return_type;
+    else if (node->id == NodeVar) return ((Variable*)node)->type;
+    else comp.error(node->tok, err_expected, "expression");
+}
+
+void Parser::addTypeInfo(Node *node) {
+    while (node) {
+        if (node->id == NodeAssign)
+            addVarType(node);
+        node = node->next;
     }
 }
 
@@ -760,7 +785,7 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
 Node * Parser::checkArgType(Node *arg, Type *expected) {
     assert(arg && expected);
 
-    Type *ty = (Type *)arg;
+    const Type *ty = (const Type *)arg;
     if (arg->id == NodeVar) {
         ty = ((Variable *)arg)->type;
     }
@@ -1020,6 +1045,8 @@ Node * Parser::parseCodeBlock(Token *tok, Context *ctx, bool is_func_body) {
 
     parseFunctions(ctx);
     curCtx = ctx;
+
+    addTypeInfo(ast);
 
     LOG() << "end\n";
     return ast;

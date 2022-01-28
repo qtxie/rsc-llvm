@@ -18,6 +18,7 @@ DIAG(err_expected_arg, Error, "expected {0} but found {1}")
 DIAG(err_expected_type, Error, "expected type {0} but found {1}")
 DIAG(err_invalid_func, Error, "invalid definition for function")
 DIAG(err_invalid_assign, Error, "nested assignment in expression not supported")
+DIAG(err_not_initialized, Error, "local variable {0} used before being initialized!")
 
 DIAG(err_float_overflow, Error, "float overflow")
 DIAG(err_int_overflow, Error, "integer overflow")

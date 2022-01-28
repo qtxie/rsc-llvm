@@ -361,10 +361,16 @@ llvm::Type * CodeGen::llvmType(const Node *node) {
     case TypePtr:    return llvmType(ty->data.type)->getPointerTo();
     case TypeCStr:   return byte_ty->getPointerTo();
     //case TypeArray:  return llvm::ArrayType::get(byte_ty, ty->tok->len);
-    case TypeFunc: 
-
+    case TypeFunc: break; 
+    case TypeVoid:
+            comp.error(node->tok, err_not_initialized, node->tok->str());
     default:
         break;
     }
     return nullptr;
+}
+
+template <typename... Args>
+void CodeGen::error(const Node *node, unsigned diag_id, Args &&... args) {
+    comp.error(node->tok, diag_id, std::forward<Args>(args)...);
 }

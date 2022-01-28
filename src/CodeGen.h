@@ -72,6 +72,9 @@ private:
     }
     llvm::FunctionType * createFuncType(Function *fn);
     llvm::Type * llvmType(const Node *ty);
+
+    template <typename... Args>
+    void error(const Node * node, unsigned diag_id, Args &&... args);
 };
 
 #endif /* RED_SYSTEM_CODEGEN_H */

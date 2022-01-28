@@ -59,6 +59,9 @@ struct Node {
     uint32_t size;
     Node *next;
     Token *tok;         // main token
+
+    constexpr StringRef str() {return StringRef(tok->loc, tok->len);}
+    bool isa(NodeId node_id) {return id == node_id;}
 };
 
 typedef StringMap<Node *> HashMap;
@@ -106,14 +109,14 @@ struct Function : Type {
 
 struct Variable : Node {
     const Type *type;
-    Node *init_data;
     VarAttr attrs;
-    int offset;     // for local variable
     IrValue *ir;
+    bool is_type(NodeId type_id) {return type->id == type_id;}
 };
 
 struct Identifier: Node {
     Variable *var;
+    bool is_type(NodeId type_id) {return var->type->id == type_id;}
 };
 
 struct BinaryOp : Node {
@@ -129,6 +132,11 @@ struct Unary : Node {
 
 struct Pointer : Node {
     Node *value;
+    bool is_type(NodeId type_id) {
+        if (value->id == NodeVar)
+            return ((Variable *)value)->type->id == type_id;
+        return value->id == type_id;
+    }
 };
 
 struct MemberAccess : Node {
@@ -272,6 +280,9 @@ private:
 
     template <typename T>
     T * copyNode(const T *node) {return new (nodeBuf.alloc(sizeof(T))) T{*node};}
+
+    template <typename... Args>
+    void error(const Node * node, unsigned diag_id, Args &&... args);
 };
 
 // For debugging

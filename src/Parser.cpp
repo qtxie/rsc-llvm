@@ -137,7 +137,7 @@ Variable * Parser::addVar(Context *ctx, Token *name, bool is_local) {
     auto& vars = ctx->decls;
     auto const & [keyval, is_new] = vars.insert({name->str(), node});
     if (!is_new && is_local)
-        comp.error(name, err_symbol_declared, name);
+        comp.error(name, err_symbol_declared, name->str());
     return node;
 }
 
@@ -145,7 +145,7 @@ void Parser::addDecl(Context *ctx, Token *name, Node *node) {
     auto& decls = ctx->decls;
     auto const & [keyval, is_new] = decls.insert({name->str(), node});
     if (!is_new)
-        comp.error(name, err_symbol_declared, name);
+        comp.error(name, err_symbol_declared, name->str());
 }
 
 Node * Parser::findDecl(Token *name, Context **ctx_out) {
@@ -545,6 +545,7 @@ const Type * Parser::addVarType(Node *node) {
 
 void Parser::addTypeInfo(Node *node) {
     while (node) {
+        LOG() << NodeName[node->id] << '\n';
         switch (node->id)
         {
         case NodeAssign:
@@ -552,6 +553,17 @@ void Parser::addTypeInfo(Node *node) {
             break;
         case NodeIf:
             addTypeInfo(((If *)node)->body);
+            break;
+        case NodeFnCall:
+            addTypeInfo(((FnCall *)node)->args);
+            break;
+        case NodeIdent:
+            if (((Identifier *)node)->is_type(TypeVoid))
+                error(node, err_not_initialized, node->str());
+            break;
+        case NodePtr:
+            if (((Pointer *)node)->is_type(TypeVoid))
+                error(node, err_not_initialized, node->str());
             break;
         default:
             break;
@@ -1075,6 +1087,11 @@ Program * Parser::parse(Token *tok) {
     program->ctx = ctx;
     program->ast = parseCodeBlock(tok, ctx);
     return program;
+}
+
+template <typename... Args>
+void Parser::error(const Node *node, unsigned diag_id, Args &&... args) {
+    comp.error(node->tok, diag_id, std::forward<Args>(args)...);
 }
 
 // For debugging

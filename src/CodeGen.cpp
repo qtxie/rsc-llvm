@@ -47,7 +47,7 @@ CodeGen::CodeGen(Compilation &c) : comp(c) {
 }
 
 llvm::Value * CodeGen::readVariable(Variable *var) {
-    LOG() << var << " " << var->tok->str() << " " << var->attrs << '\n';
+    LOG() << var << " " << var->tok->str() << " " << var->ir << " " << var->attrs << '\n';
     return builder->CreateLoad(var->ir);
 }
 
@@ -91,6 +91,7 @@ llvm::Value * CodeGen::emitCall(FnCall *call) {
         args = args->next;
     }
 
+    LOG() << call->tok->str() << " " << argv.size() << "\n";
     auto call_inst = llvm::CallInst::Create(func->getFunctionType(), func, argv, "");
     builder->Insert(call_inst);
     return call_inst;
@@ -247,13 +248,17 @@ void CodeGen::emitFunc(Function *fn) {
     alloca_on_stack(fn->locals);
 
     emitCode(fn->body.node);
-    builder->CreateRet(curVal);
+    if (fn->return_type)
+        builder->CreateRet(curVal);
+    else
+        builder->CreateRetVoid();
 }
 
 void CodeGen::emitFunctions(Context *ctx) {
     for (auto const &val : ctx->decls) {
         Type *ty = (Type *)val.second;
         if (ty->id == TypeFunc) {
+            LOG() << ty->tok->str() << '\n';
             emitFunc((Function *)ty);
         } else if (ty->id == NodeContext) {
             emitFunctions((Context* )ty);
@@ -261,14 +266,14 @@ void CodeGen::emitFunctions(Context *ctx) {
     }
 }
 
-void CodeGen::emitMainFunc(Node *ast) {
+void CodeGen::emitMainFunc(Program *prog) {
+    LOG() << '\n';
+    auto fn = prog->ctx->func;
     auto func_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), false);
-    auto func = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, comp.entryFuncName, *M);
+    fn->ir = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, comp.entryFuncName, *M);
+    fn->body.node = prog->ast;
 
-    auto entry_block = BasicBlock::Create(Ctx, "entry", func);
-    setCurrentBasicBlock(entry_block);
-    emitCode(ast);
-    builder->CreateRetVoid();
+    emitFunc(fn);
 }
 
 void CodeGen::output() {
@@ -342,7 +347,7 @@ void CodeGen::output() {
 }
 
 void CodeGen::emit(Program *prog) {
-    emitMainFunc(prog->ast);
+    emitMainFunc(prog);
     emitFunctions(prog->ctx);
     output();
 }

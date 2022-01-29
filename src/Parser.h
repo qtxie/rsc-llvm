@@ -33,6 +33,7 @@ enum FuncAttr {
     FuncCatch    = 0x0080,
     FuncInline   = 0x0100,
     FuncExtern   = 0x0200,
+    FuncThrow    = 0x0400,
 
     FuncAttrEnd,
     LLVM_MARK_AS_BITMASK_ENUM(/* LargestValue = */ FuncAttrEnd)
@@ -152,6 +153,10 @@ struct Return : Node {
     Node *expr;
 };
 
+struct Throw : Node {
+    Node *value;
+};
+
 struct If : Node {
     Node *cond;
     Node *body;
@@ -164,8 +169,10 @@ struct Either : Node {
 };
 
 struct Context : Node {
-    Context *parent;
     HashMap decls;             // for struct, enum, function, alias, context, variable
+    Function *func; 
+    Context *parent;
+    bool is_root;
 };
 
 struct Program : Node {
@@ -190,12 +197,23 @@ private:
     SmallVector<uint32_t> tids;  // detect struct circular reference
     SmallVector<Token *> import_libs;
 
+    Token hiddenParamTok;
+    Type uintPtrTy;
+    Type uintTy;
     NodeBuffer nodeBuf;
 
     Logger LOG;
 
 public:
-    Parser(Compilation &c, CodeGen &_codegen) : Utils(c), codegen(_codegen), curTypeId(1000) {};
+    Parser(Compilation &c, CodeGen &_codegen) : Utils(c), codegen(_codegen), curTypeId(1000) {
+        hiddenParamTok.id = TokenIdWord;
+        hiddenParamTok.loc = "__r/s_throw_";
+        hiddenParamTok.len = 12;
+        uintTy = Type{TypeInt, false, 4, 4, nullptr, nullptr, TypeInt};
+        uintPtrTy.id = TypePtr;
+        uintPtrTy.data.type = &uintTy;
+    };
+
     Parser(Compilation &&) = delete;  // prevents rvalue binding
 
     Program *parse(Token *tok);
@@ -214,8 +232,14 @@ private:
     const Type * addVarType(Node *node);
     void addTypeInfo(Node *node);
 
+    void addCurFuncAttr(FuncAttr attr) {
+        using namespace llvm;
+        curCtx->func->attrs |= attr;
+    }
+
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
     Node * parseIf(Token *tok, Token **rest);
+    Node * parseThrow(Token *tok, Token **rest);
     Node * parseReturn(Token *tok, Token **rest);
     Node * parseFnCall(Function *fn, Token *tok, Token **rest);
     Node * parseAssignment(Token *tok, Token **rest);

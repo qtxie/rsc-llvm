@@ -49,7 +49,7 @@ public:
     llvm::GlobalVariable * emitGlobalVar(Variable *var);
 
     void emitCode(Node *node);
-    void emitMainFunc(Node *ast);
+    void emitMainFunc(Program *prog);
     void emitFunc(Function *fn);
     void emitFunctions(Context *ctx);
 

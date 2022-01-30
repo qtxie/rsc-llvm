@@ -157,6 +157,12 @@ struct Throw : Node {
     Node *value;
 };
 
+struct Catch : Node {
+    Node *filter;
+    Node *body;
+    Node *handler;
+};
+
 struct If : Node {
     Node *cond;
     Node *body;
@@ -239,6 +245,7 @@ private:
 
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
     Node * parseIf(Token *tok, Token **rest);
+    Node * parseCatch(Token *tok, Token **rest);
     Node * parseThrow(Token *tok, Token **rest);
     Node * parseReturn(Token *tok, Token **rest);
     Node * parseFnCall(Function *fn, Token *tok, Token **rest);

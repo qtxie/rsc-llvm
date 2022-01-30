@@ -875,14 +875,15 @@ Node * Parser::parseFnCall(Function *fn, Token *tok, Token **rest) {
             var = curCtx->is_root ? (Variable *)curCtx->func->locals : (Variable *)curCtx->func->params;
         } else {
             var = addVar(curCtx, &hiddenParamTok, true);
-            var->type = &uintPtrTy;
             auto cur_fn = curCtx->func;
             if (curCtx->is_root) {
+                var->type = &uintTy;
                 // add a hidden local variable in caller for exception handling
                 var->next = cur_fn->locals;
                 cur_fn->locals = var;
                 cur_fn->n_locals++;
             } else {
+                var->type = &uintPtrTy;
                 // add a hidden param in caller for exception handling
                 var->next = cur_fn->params;
                 cur_fn->params = var;
@@ -890,8 +891,16 @@ Node * Parser::parseFnCall(Function *fn, Token *tok, Token **rest) {
             }
             addCurFuncAttr(FuncThrow);
         }
-        auto arg = newNode<Identifier>(NodeIdent, var->tok);
-        arg->var = var;
+        Node *arg;
+        if (curCtx->is_root) {
+            auto ptr = newNode<Pointer>(NodePtr, var->tok);
+            ptr->value = var;
+            arg = ptr;
+        } else {
+            auto ident = newNode<Identifier>(NodeIdent, var->tok);
+            ident->var = var;
+            arg = ident;
+        }
         arg->next = call->args;
         call->args = arg;
     }
@@ -1056,6 +1065,15 @@ Node * Parser::parseThrow(Token *tok, Token **rest) {
     return node;
 }
 
+Node * Parser::parseCatch(Token *tok, Token **rest) {
+    auto node = newNode<Catch>(NodeCatch, tok);
+    node->filter = parseExpr(tok->next, &tok);
+    node->body = parseCode(tok->next, &tok, curCtx);
+    *rest = tok;
+    if (tok->next->id == TokenIdLBracket) node->filter = parseCode(tok->next, rest, curCtx);
+    return node;
+}
+
 Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) {
     if (is_block) tok = skip(tok, TokenIdLBracket, '[');
     curCtx = ctx;
@@ -1080,6 +1098,7 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
         case TokenIdLoop:
         case TokenIdReturn: node = parseReturn(tok, &tok); break;
         case TokenIdThrow: node = parseThrow(tok, &tok); break;
+        case TokenIdCatch: node = parseCatch(tok, &tok); break;
 
         case TokenIdExit:
         case TokenIdWith:

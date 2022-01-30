@@ -28,3 +28,9 @@ This is a quick and dirty implementation, for the following purposes:
 
 ### Build on Linux
 TBD
+
+### Dev Note
+Output LLVM IR:
+```
+redsc.exe --emit-llvm-ir filename.reds
+```

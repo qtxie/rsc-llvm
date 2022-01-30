@@ -24,6 +24,11 @@ private:
     llvm::Function *curFunc;
     llvm::BasicBlock *curBB;
     llvm::Value *curVal;
+    llvm::Value *catchFilter;
+    llvm::BasicBlock *afterCatchBB;
+    bool in_catch;
+    bool in_main_func;
+    llvm::Value *firstLocalVar;
 
     llvm::IntegerType *bool_ty;
     llvm::IntegerType *byte_ty;
@@ -48,10 +53,14 @@ public:
     llvm::Value * emitAssignment(Assignment *node);
     llvm::GlobalVariable * emitGlobalVar(Variable *var);
 
+    void emitCatch(Catch *node);
+    void emitThrow(Throw *node);
     void emitCode(Node *node);
     void emitMainFunc(Program *prog);
     void emitFunc(Function *fn);
     void emitFunctions(Context *ctx);
+
+    void handleThrow();
 
     llvm::Value * createFunc(Function *fn, Context *ctx);
 

@@ -44,6 +44,8 @@ CodeGen::CodeGen(Compilation &c) : comp(c) {
     f64_ty = llvm::Type::getDoubleTy(Ctx);
     bool_ty = llvm::Type::getInt1Ty(Ctx);
     byte_ty = llvm::Type::getInt8Ty(Ctx);
+    in_catch = false;
+    in_main_func = false;
 }
 
 llvm::Value * CodeGen::readVariable(Variable *var) {
@@ -80,6 +82,21 @@ llvm::Value * CodeGen::emitIf(If *node) {
     return nullptr;
 }
 
+void CodeGen::handleThrow() {
+    auto if_bb = createBasicBlock("e.catched", afterCatchBB);
+    auto after_if_bb = createBasicBlock("after.if", afterCatchBB);
+    auto exception_val = in_main_func ? firstLocalVar : curFunc->getArg(0);
+    llvm::Value *exception = builder->CreateLoad(exception_val);
+    llvm::Value *filter = in_catch ? catchFilter : llvm::ConstantInt::get(i32_ty, 0);
+    llvm::Value *cond = builder->CreateICmpSLE(exception, filter);
+    builder->CreateCondBr(cond, if_bb, after_if_bb);
+
+    auto saved_bb = curBB;
+    setCurrentBasicBlock(if_bb);
+    builder->CreateBr(afterCatchBB);
+    setCurrentBasicBlock(after_if_bb);
+}
+
 llvm::Value * CodeGen::emitCall(FnCall *call) {
     llvm::Function *func = llvm::cast<llvm::Function>(call->fn->ir);
 
@@ -94,6 +111,7 @@ llvm::Value * CodeGen::emitCall(FnCall *call) {
     LOG() << call->tok->str() << " " << argv.size() << "\n";
     auto call_inst = llvm::CallInst::Create(func->getFunctionType(), func, argv, "");
     builder->Insert(call_inst);
+    if (call->fn->attrs & FuncThrow) handleThrow();
     return call_inst;
 }
 
@@ -147,7 +165,7 @@ llvm::Value * CodeGen::emitAssignment(Assignment *node) {
         val = emitExpr(node->rhs);
     }
 
-    if (left->ir) {
+    if (left->ir) {  // assingment
 
     } else {         // declare global variable
         auto var = emitGlobalVar(left);
@@ -157,6 +175,23 @@ llvm::Value * CodeGen::emitAssignment(Assignment *node) {
     return val;
 }
 
+void CodeGen::emitThrow(Throw *node) {
+    auto val = emitExpr(node->value);
+    auto arg_throw = curFunc->getArg(0);
+    builder->CreateStore(val, arg_throw);
+    builder->CreateRetVoid();
+}
+
+void CodeGen::emitCatch(Catch *node) {
+    in_catch = true;
+    catchFilter = emitExpr(node->filter);
+    afterCatchBB = createBasicBlock("after.catch");
+    emitCode(node->body);
+    builder->CreateBr(afterCatchBB);
+    setCurrentBasicBlock(afterCatchBB);
+    in_catch = false;
+}
+
 void CodeGen::emitCode(Node *node) {
     while (node) {
         llvm::Value *inst = nullptr;
@@ -164,6 +199,8 @@ void CodeGen::emitCode(Node *node) {
         switch (node->id)
         {
         case NodeReturn: builder->CreateRet(emitExpr(((Return *)node)->expr)); break;
+        case NodeThrow: emitThrow((Throw *)node); break;
+        case NodeCatch: emitCatch((Catch *)node); break;
         case NodeAssign: emitAssignment((Assignment *)node); break;
         default:
             emitExpr(node);
@@ -246,12 +283,18 @@ void CodeGen::emitFunc(Function *fn) {
     }
     // allocate local variables on stack
     alloca_on_stack(fn->locals);
+    if (in_main_func) {
+        afterCatchBB = createBasicBlock("after.catch");
+        firstLocalVar = ((Variable *)fn->locals)->ir;
+    }
 
     emitCode(fn->body.node);
-    if (fn->return_type)
-        builder->CreateRet(curVal);
-    else
-        builder->CreateRetVoid();
+    if (!curBB->getTerminator()) {
+        if (fn->return_type)
+            builder->CreateRet(curVal);
+        else
+            builder->CreateRetVoid();
+    }
 }
 
 void CodeGen::emitFunctions(Context *ctx) {
@@ -272,8 +315,13 @@ void CodeGen::emitMainFunc(Program *prog) {
     auto func_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), false);
     fn->ir = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, comp.entryFuncName, *M);
     fn->body.node = prog->ast;
-
+    in_main_func = true;
     emitFunc(fn);
+    if (!afterCatchBB->getTerminator()) {
+        setCurrentBasicBlock(afterCatchBB);
+        builder->CreateRetVoid();
+    }
+    in_main_func = false;
 }
 
 void CodeGen::output() {

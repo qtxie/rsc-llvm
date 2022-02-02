@@ -104,11 +104,13 @@ static std::string getHome() {
 	buffer.resize(bufsize);
 	int error_code = getpwuid_r(uid, &pwd, buffer.data(), buffer.size(), &pw);
 	if (error_code) {
-		throw std::runtime_error("Unable to get passwd struct.");
+        return res;
+		//throw std::runtime_error("Unable to get passwd struct.");
 	}
 	const char* tempRes = pw->pw_dir;
 	if (!tempRes) {
-		throw std::runtime_error("User has no home directory");
+        return res;
+		//throw std::runtime_error("User has no home directory");
 	}
 	res = tempRes;
 	return res;

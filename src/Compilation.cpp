@@ -145,7 +145,39 @@ Token * Compilation::parseHeader(Token *tok) {
     return tok;
 }
 
-void Compilation::link(llvm::SmallSet<StringRef, 4> &import_libs) {
+void Compilation::linkElf(llvm::SmallSet<StringRef, 4> &import_libs) {
+    std::vector<const char *> argv{"-error-limit=0"};
+
+    argv.push_back("-z");
+    argv.push_back("stack-size=16777216");
+
+    argv.push_back("--gc-sections");
+
+    argv.push_back("--entry");
+    argv.push_back(entryFuncName.c_str());
+
+    argv.push_back("-m");
+    argv.push_back("elf_x86_64");
+
+    argv.push_back("-static");
+    argv.push_back("-pie");
+
+    auto out_file = outputFilepath;
+    argv.push_back("-o");
+    argv.push_back(out_file.c_str());
+
+    auto obj_file = outputFilepath;
+    argv.push_back(obj_file.append(OBJ_EXT).c_str());
+
+    argv.push_back("-L");
+    argv.push_back("/usr/lib/x86_64-linux-musl");
+    argv.push_back("-lc");
+
+    if (!lld::elf::link(argv, false, llvm::outs(), llvm::errs()))
+        lld::exitLld(-1);
+}
+
+void Compilation::linkCoff(llvm::SmallSet<StringRef, 4> &import_libs) {
     std::vector<const char *> argv{"-ERRORLIMIT:0", "-NOLOGO"};
     argv.push_back("-DEBUG");
     argv.push_back("-STACK:16777216");
@@ -155,7 +187,7 @@ void Compilation::link(llvm::SmallSet<StringRef, 4> &import_libs) {
     argv.push_back(out_file.insert(0, "-OUT:").c_str());
 
     auto obj_file = outputFilepath;
-    argv.push_back(obj_file.append(".obj").c_str());
+    argv.push_back(obj_file.append(OBJ_EXT).c_str());
 
     argv.push_back("-SUBSYSTEM:console");
     argv.push_back("-NODEFAULTLIB");
@@ -174,6 +206,15 @@ void Compilation::link(llvm::SmallSet<StringRef, 4> &import_libs) {
 
     if (!lld::coff::link(argv, false, llvm::outs(), llvm::errs()))
         lld::exitLld(-1);
+}
+
+void Compilation::link(llvm::SmallSet<StringRef, 4> &import_libs) {
+#ifdef _WIN32
+    linkCoff(import_libs);
+#else
+    linkElf(import_libs);
+#endif
+    llvm::outs() << "Output file: " << outputFilepath + BIN_EXT << '\n';
 }
 
 void Compilation::run() {

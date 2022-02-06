@@ -9,6 +9,10 @@ if is_plat("windows") then
 elseif is_plat("linux") then
     add_defines("_GNU_SOURCE", "__STDC_CONSTANT_MACROS", "__STDC_FORMAT_MACROS", "__STDC_LIMIT_MACROS")
     add_cxflags("-Wno-narrowing", "-fno-exceptions")
+    if is_mode("debug") then
+        add_cxflags("-g")
+        add_ldflags("-g")
+    end
 end
 
 option("llvm")

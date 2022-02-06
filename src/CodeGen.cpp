@@ -283,7 +283,7 @@ void CodeGen::emitFunc(Function *fn) {
     }
     // allocate local variables on stack
     alloca_on_stack(fn->locals);
-    if (in_main_func) {
+    if (in_main_func && (fn->attrs & FuncThrow)) {
         afterCatchBB = createBasicBlock("after.catch");
         firstLocalVar = ((Variable *)fn->locals)->ir;
     }
@@ -317,7 +317,7 @@ void CodeGen::emitMainFunc(Program *prog) {
     fn->body.node = prog->ast;
     in_main_func = true;
     emitFunc(fn);
-    if (!afterCatchBB->getTerminator()) {
+    if ((fn->attrs & FuncThrow) && !afterCatchBB->getTerminator()) {
         setCurrentBasicBlock(afterCatchBB);
         builder->CreateRetVoid();
     }
@@ -371,7 +371,7 @@ void CodeGen::output() {
         open_flags |= sys::fs::OF_Text;
         filepath.append(".ll");
     } else {
-        filepath.append(".obj");
+        filepath.append(OBJ_EXT);
     }
 
     // Open the file.

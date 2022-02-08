@@ -56,16 +56,17 @@ public:
     void emitCatch(Catch *node);
     void emitThrow(Throw *node);
     void emitCode(Node *node);
-    void emitMainFunc(Program *prog);
+    void emitMainFunc(Function *fn);
     void emitFunc(Function *fn);
     void emitFunctions(Context *ctx);
 
     void handleThrow();
 
+    void createFunctions(Context *ctx);
     llvm::Value * createFunc(Function *fn, Context *ctx);
 
     void output();
-    void emit(Program *prog);
+    void emit(Context *prog);
 
     llvm::SmallSet<StringRef, 4> import_libs;
 

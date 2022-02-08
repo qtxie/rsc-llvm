@@ -92,6 +92,8 @@ struct Member : Type {
     // int bit_width;
 };
 
+struct FnCall;
+
 struct Function : Type {
     Token *import_name;
     uint32_t n_params;
@@ -105,7 +107,17 @@ struct Function : Type {
         Node  *node;
     } body;
     FuncAttr attrs;
+    std::vector<FnCall *> *calls;
     IrValue *ir;
+
+    bool isThrowable() {
+        return static_cast<bool>(attrs & FuncThrow);
+    }
+
+    void addAttr(FuncAttr attr) {
+        using namespace llvm;
+        attrs |= attr;
+    }
 };
 
 struct Variable : Node {
@@ -181,13 +193,6 @@ struct Context : Node {
     bool is_root;
 };
 
-struct Program : Node {
-    Node *functions;
-    Node *data;                // global variables
-    Node *ast;
-    Context *ctx;              // global context
-};
-
 class Compilation;
 class CodeGen;
 
@@ -203,6 +208,7 @@ private:
     SmallVector<uint32_t> tids;  // detect struct circular reference
     SmallVector<Token *> import_libs;
 
+    SmallVector<std::tuple<Function*, FnCall*, bool>> unresolvedCalls;
     Token hiddenParamTok;
     Type uintPtrTy;
     Type uintTy;
@@ -222,7 +228,7 @@ public:
 
     Parser(Compilation &&) = delete;  // prevents rvalue binding
 
-    Program *parse(Token *tok);
+    Context *parse(Token *tok);
 
 private:
     Variable * addVar(Context *ctx, Token * name, bool is_local = false);
@@ -262,6 +268,8 @@ private:
     Node * parseCode(Token *tok, Token **rest, Context *ctx, bool is_block = true);
     Node * parseCodeBlock(Token *tok, Context *ctx, bool is_func_body = false);
     void parseFunctions(Context *ctx);
+    void analyzeCalls(Function *fn, bool is_main_func = true);
+    void updateCall(Function *fn, FnCall *call, bool is_main_func);
 
     const Type * collectAlias(Token *tok, Token **rest) {
         return parseType(tok, rest, false, true);

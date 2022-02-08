@@ -583,6 +583,69 @@ void Parser::addTypeInfo(Node *node) {
     }
 }
 
+void Parser::updateCall(Function *fn, FnCall *call, bool is_main_func) {
+    Variable *var;
+    if (fn->isThrowable()) {
+        var = is_main_func ? (Variable *)fn->locals : (Variable *)fn->params;
+    } else {
+        var = newNode<Variable>(NodeVar, &hiddenParamTok);
+        if (is_main_func) {
+            var->type = &uintTy;
+            // add a hidden local variable in caller for exception handling
+            var->next = fn->locals;
+            fn->locals = var;
+            fn->n_locals++;
+        } else {
+            var->type = &uintPtrTy;
+            // add a hidden param in caller for exception handling
+            var->next = fn->params;
+            fn->params = var;
+            fn->n_params++;
+        }
+        fn->addAttr(FuncThrow);
+    }
+    Node *arg;
+    if (is_main_func) {
+        auto ptr = newNode<Pointer>(NodePtr, var->tok);
+        ptr->value = var;
+        arg = ptr;
+    } else {
+        auto ident = newNode<Identifier>(NodeIdent, var->tok);
+        ident->var = var;
+        arg = ident;
+    }
+    arg->next = call->args;
+    call->args = arg;
+}
+
+void Parser::analyzeCalls(Function *fn, bool is_main_func) {
+    constexpr NodeId Analyzing = TypeFuncUnresolved;
+
+    if (fn->is_signed || !fn->calls) return;
+    fn->id = Analyzing;
+    bool is_updated = true;
+    for (auto &call : *fn->calls) {
+        LOG() << fn->tok->str() << " " << call->fn->tok->str() << '\n';
+        if (call->fn->id != Analyzing) analyzeCalls(call->fn, false);
+        if (call->fn->isThrowable()) {
+            updateCall(fn, call, is_main_func);
+        } else if (call->fn->id == Analyzing) {
+            unresolvedCalls.push_back({fn, call, is_main_func});
+            is_updated = false;
+        }
+    }
+    fn->is_signed = true;   // reuse this field, func has been analyzed.
+    if (is_updated) fn->id = TypeFunc;
+
+    if (is_main_func && !unresolvedCalls.empty()) {
+        for (auto &[f, call, is_main] : unresolvedCalls) {
+            if (call->fn->isThrowable())
+                updateCall(f, call, is_main);
+            f->id = TypeFunc;
+        }
+    }
+}
+
 void Parser::parseFunctions(Context *ctx) {
     curCtx = ctx;
     for (auto const &val : ctx->decls) {
@@ -609,14 +672,8 @@ void Parser::parseFunctions(Context *ctx) {
             fn->params = add_into_fn_ctx(fn->params);
             fn->locals = add_into_fn_ctx(fn->locals);
     
-            LOG() << fn->tok->str() << " " << fn->attrs << " " << fn->n_params << '\n';
-
             if (fn->body.token) fn->body.node = parseCodeBlock(fn->body.token, &fn_ctx, true);
             curCtx = ctx;
-
-            LOG() << fn->tok->str() << " " << fn->attrs << " " << fn->n_params << '\n';
-            codegen.createFunc(fn, ctx);
-
         } else if (ty->id == NodeContext) {
             parseFunctions((Context* )ty);
             curCtx = ctx;
@@ -857,7 +914,7 @@ Node * Parser::parseFnCall(Function *fn, Token *tok, Token **rest) {
         }
     } else {
         auto param = fn->params;
-        if (fn->attrs & FuncThrow) param = param->next;
+        if (fn->isThrowable()) param = param->next;
         while (param) {
             auto arg = parseExpr(tok->next, &tok);
             cur = cur->next = arg; //checkArgType(arg, (Type *)param);
@@ -865,45 +922,11 @@ Node * Parser::parseFnCall(Function *fn, Token *tok, Token **rest) {
         }
     }
     call->args = head.next;
+    auto caller = curCtx->func;
+    if (!caller->calls) caller->calls = new std::vector<FnCall *>;
+    caller->calls->push_back(call);
 
     LOG() << fn->tok->str() << " " << fn->attrs << " " << curCtx->func << " " << curCtx->func->attrs << '\n';
-
-    // if current function calls a throwable function
-    if (fn->attrs & FuncThrow) {
-        Variable *var;
-        if (curCtx->func->attrs & FuncThrow) {
-            var = curCtx->is_root ? (Variable *)curCtx->func->locals : (Variable *)curCtx->func->params;
-        } else {
-            var = addVar(curCtx, &hiddenParamTok, true);
-            auto cur_fn = curCtx->func;
-            if (curCtx->is_root) {
-                var->type = &uintTy;
-                // add a hidden local variable in caller for exception handling
-                var->next = cur_fn->locals;
-                cur_fn->locals = var;
-                cur_fn->n_locals++;
-            } else {
-                var->type = &uintPtrTy;
-                // add a hidden param in caller for exception handling
-                var->next = cur_fn->params;
-                cur_fn->params = var;
-                cur_fn->n_params++;
-            }
-            addCurFuncAttr(FuncThrow);
-        }
-        Node *arg;
-        if (curCtx->is_root) {
-            auto ptr = newNode<Pointer>(NodePtr, var->tok);
-            ptr->value = var;
-            arg = ptr;
-        } else {
-            auto ident = newNode<Identifier>(NodeIdent, var->tok);
-            ident->var = var;
-            arg = ident;
-        }
-        arg->next = call->args;
-        call->args = arg;
-    }
 
     *rest = tok;
     return call;
@@ -1052,7 +1075,7 @@ Node * Parser::parseReturn(Token *tok, Token **rest) {
 Node * Parser::parseThrow(Token *tok, Token **rest) {
     auto node = newNode<Throw>(NodeThrow, tok);
     node->value = parseExpr(tok->next, rest);
-    if (!(curCtx->func->attrs & FuncThrow)) {
+    if (!curCtx->func->isThrowable()) {
         // add a hidden param for exception handling
         auto fn = curCtx->func;
         auto param = addVar(curCtx, &hiddenParamTok);
@@ -1060,7 +1083,7 @@ Node * Parser::parseThrow(Token *tok, Token **rest) {
         param->next = fn->params;
         fn->params = param;
         fn->n_params++;
-        addCurFuncAttr(FuncThrow);
+        fn->addAttr(FuncThrow);
     }
     return node;
 }
@@ -1136,7 +1159,7 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
 }
 
 Node * Parser::parseCodeBlock(Token *tok, Context *ctx, bool is_func_body) {
-    LOG() << "start\n"; LOG.indent();
+    (LOG() << "start\n").indent();
 
     curCtx = ctx;
     tok = collectDeclarations(tok, ctx, is_func_body, is_func_body);
@@ -1158,19 +1181,18 @@ Node * Parser::parseCodeBlock(Token *tok, Context *ctx, bool is_func_body) {
 
     addTypeInfo(ast);
 
-    LOG() << "end\n"; LOG.unindent();
+    LOG.unindent(); LOG() << "end\n";
     return ast;
 }
 
-Program * Parser::parse(Token *tok) {
-    Program *program = newNode<Program>(NodeProgram, tok);
+Context * Parser::parse(Token *tok) {
     Context *ctx = newContext(tok);
+    Function *mainFunc = newNode<Function>(TypeFunc, tok);
     ctx->is_root = true;
-    ctx->func = newNode<Function>(TypeFunc);
-    LOG() << ctx << " " << ctx->func << '\n';
-    program->ctx = ctx;
-    program->ast = parseCodeBlock(tok, ctx);
-    return program;
+    ctx->func = mainFunc;
+    mainFunc->body.node = parseCodeBlock(tok, ctx);
+    analyzeCalls(mainFunc);
+    return ctx;
 }
 
 template <typename... Args>

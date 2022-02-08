@@ -98,6 +98,7 @@ void CodeGen::handleThrow() {
 }
 
 llvm::Value * CodeGen::emitCall(FnCall *call) {
+    LOG() << call->fn->tok->str() << '\n';
     llvm::Function *func = llvm::cast<llvm::Function>(call->fn->ir);
 
     // process arguments
@@ -111,7 +112,7 @@ llvm::Value * CodeGen::emitCall(FnCall *call) {
     LOG() << call->tok->str() << " " << argv.size() << "\n";
     auto call_inst = llvm::CallInst::Create(func->getFunctionType(), func, argv, "");
     builder->Insert(call_inst);
-    if (call->fn->attrs & FuncThrow) handleThrow();
+    if (call->fn->isThrowable()) handleThrow();
     return call_inst;
 }
 
@@ -221,6 +222,7 @@ llvm::FunctionType * CodeGen::createFuncType(Function *fn) {
         params_ty.push_back(llvmType(params));
         params = params->next;
     }
+            LOG() << fn->tok->str() << " " << params_ty.size() << "\n";
     return llvm::FunctionType::get(result_ty, params_ty, fn->attrs & FuncVariadic);
 }
 
@@ -255,6 +257,17 @@ llvm::Value * CodeGen::createFunc(Function *fn, Context *ctx) {
     return func;
 }
 
+void CodeGen::createFunctions(Context *ctx) {
+    for (auto const &val : ctx->decls) {
+        Type *ty = (Type *)val.second;
+        if (ty->id == TypeFunc) {
+            createFunc((Function *)ty, ctx);
+        } else if (ty->id == NodeContext) {
+            createFunctions((Context* )ty);
+        }
+    }
+}
+
 void CodeGen::emitFunc(Function *fn) {
     if (fn->data.import_lib) return;
 
@@ -283,7 +296,7 @@ void CodeGen::emitFunc(Function *fn) {
     }
     // allocate local variables on stack
     alloca_on_stack(fn->locals);
-    if (in_main_func && (fn->attrs & FuncThrow)) {
+    if (in_main_func && fn->isThrowable()) {
         afterCatchBB = createBasicBlock("after.catch");
         firstLocalVar = ((Variable *)fn->locals)->ir;
     }
@@ -309,15 +322,13 @@ void CodeGen::emitFunctions(Context *ctx) {
     }
 }
 
-void CodeGen::emitMainFunc(Program *prog) {
+void CodeGen::emitMainFunc(Function *fn) {
     LOG() << '\n';
-    auto fn = prog->ctx->func;
     auto func_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), false);
     fn->ir = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, comp.entryFuncName, *M);
-    fn->body.node = prog->ast;
     in_main_func = true;
     emitFunc(fn);
-    if ((fn->attrs & FuncThrow) && !afterCatchBB->getTerminator()) {
+    if (fn->isThrowable() && !afterCatchBB->getTerminator()) {
         setCurrentBasicBlock(afterCatchBB);
         builder->CreateRetVoid();
     }
@@ -394,9 +405,10 @@ void CodeGen::output() {
     out_file->keep();
 }
 
-void CodeGen::emit(Program *prog) {
-    emitMainFunc(prog);
-    emitFunctions(prog->ctx);
+void CodeGen::emit(Context *ctx) {
+    createFunctions(ctx);
+    emitMainFunc(ctx->func);
+    emitFunctions(ctx);
     output();
 }
 

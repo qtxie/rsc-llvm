@@ -64,7 +64,6 @@ NODE(Switch,             "switch")
 NODE(Case,               "case")
 NODE(While,              "while")
 NODE(Until,              "until")
-NODE(Program,            "program")
 
 #undef TYPE
 #undef NODE

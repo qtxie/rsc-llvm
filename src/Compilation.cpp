@@ -159,7 +159,7 @@ void Compilation::linkElf(llvm::SmallSet<StringRef, 4> &import_libs) {
     argv.push_back("-m");
     argv.push_back("elf_x86_64");
 
-    argv.push_back("-static");
+    //argv.push_back("-static");
     argv.push_back("-pie");
 
     auto out_file = outputFilepath;
@@ -170,7 +170,7 @@ void Compilation::linkElf(llvm::SmallSet<StringRef, 4> &import_libs) {
     argv.push_back(obj_file.append(OBJ_EXT).c_str());
 
     argv.push_back("-L");
-    argv.push_back("/usr/lib/x86_64-linux-musl");
+    argv.push_back("/lib/x86_64-linux-gnu");
     argv.push_back("-lc");
 
     if (!lld::elf::link(argv, false, llvm::outs(), llvm::errs()))

@@ -67,6 +67,28 @@ llvm::GlobalVariable * CodeGen::emitGlobalVar(Variable *var) {
     return v;
 }
 
+llvm::Value * CodeGen::emitEither(Either *node) {
+    auto if_then = createBasicBlock("if.then");
+    auto if_else = createBasicBlock("if.else");
+    auto after_if = createBasicBlock("after.if");
+
+    llvm::Value *cond = emitExpr(node->cond);
+    builder->CreateCondBr(cond, if_then, if_else);
+
+    setCurrentBasicBlock(if_then);
+    emitCode(node->then_body);
+    if (!curBB->getTerminator())
+        builder->CreateBr(after_if);
+
+    setCurrentBasicBlock(if_else);
+    emitCode(node->else_body);
+    if (!curBB->getTerminator())
+        builder->CreateBr(after_if);
+
+    setCurrentBasicBlock(after_if);
+    return nullptr;
+}
+
 llvm::Value * CodeGen::emitIf(If *node) {
     auto if_bb = createBasicBlock("if.body");
     auto after_if_bb = createBasicBlock("after.if");
@@ -127,11 +149,26 @@ llvm::Value * CodeGen::emitBinOp(Node *node) {
     llvm::Value *result = nullptr; 
     switch (node->id)
     {
-    case NodeAdd:    result = builder->CreateNSWAdd(left, right); break;
-    case NodeSub:    result = builder->CreateNSWSub(left, right); break;
-    case NodeLess:   result = builder->CreateICmpSLT(left, right); break; 
-    case NodeLessEq: result = builder->CreateICmpSLE(left, right); break; 
+    case NodeAdd:        result = builder->CreateNSWAdd(left, right); break;
+    case NodeSub:        result = builder->CreateNSWSub(left, right); break;
+    case NodeMul:        result = builder->CreateNSWMul(left, right); break;
+    case NodeDiv:        result = builder->CreateSDiv(left, right); break;
+    case NodeRemainder:  result = builder->CreateSRem(left, right); break;
+    //case NodeModulo:     result = builder->Create(left, right); break;
+    case NodeEq:         result = builder->CreateICmpEQ(left, right); break;
+    case NodeNotEq:      result = builder->CreateICmpNE(left, right); break;
+    case NodeLess:       result = builder->CreateICmpSLT(left, right); break;
+    case NodeLessEq:     result = builder->CreateICmpSLE(left, right); break;
+    case NodeGreater:    result = builder->CreateICmpSGT(left, right); break;
+    case NodeGreaterEq:  result = builder->CreateICmpSGE(left, right); break;
+    case NodeAnd:        result = builder->CreateAnd(left, right); break;
+    case NodeOr:         result = builder->CreateOr(left, right); break;
+    case NodeXor:        result = builder->CreateXor(left, right); break;
+    case NodeShiftLeft:  result = builder->CreateShl(left, right); break;
+    case NodeShiftRight: result = builder->CreateAShr(left, right); break;
+    case NodeShiftRightLogical: result = builder->CreateLShr(left, right); break;
     default:
+        assert(false);
         break;
     }
     return result;
@@ -144,6 +181,7 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     switch (node->id)
     {
     case NodeIf:     val = emitIf((If *)node); break;
+    case NodeEither: val = emitEither((Either *)node); break;
     case NodeFnCall: val = emitCall((FnCall *)node); break;
     case NodeVar:    val = readVariable((Variable *)node); break;
     case NodeIdent:  val = readVariable(((Identifier *)node)->var); break;

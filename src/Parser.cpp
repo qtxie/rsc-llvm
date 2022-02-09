@@ -1058,6 +1058,14 @@ Node * Parser::parseAssignment(Token *tok, Token **rest) {
     return node;
 }
 
+Node * Parser::parseEither(Token *tok, Token **rest) {
+    auto node = newNode<Either>(NodeEither, tok);
+    node->cond = parseExpr(tok->next, &tok);
+    node->then_body = parseCode(tok->next, &tok, curCtx);
+    node->else_body = parseCode(tok->next, rest, curCtx);
+    return node;
+}
+
 // if-stmt = "if" cond-expr body-block
 Node * Parser::parseIf(Token *tok, Token **rest) {
     auto node = newNode<If>(NodeIf, tok);
@@ -1113,7 +1121,7 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
             continue;
         // statement
         case TokenIdIf: node = parseIf(tok, &tok); break;
-        case TokenIdEither:
+        case TokenIdEither: node = parseEither(tok, &tok); break;
         case TokenIdCase:
         case TokenIdSwitch:
         case TokenIdWhile:

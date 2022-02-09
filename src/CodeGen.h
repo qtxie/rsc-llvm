@@ -46,6 +46,7 @@ public:
     llvm::Value * readVariable(Variable *var);
     llvm::Value * getPointer(Node *node);
 
+    llvm::Value * emitEither(Either *node);
     llvm::Value * emitIf(If *node);
     llvm::Value * emitCall(FnCall *call);
     llvm::Value * emitBinOp(Node *node);

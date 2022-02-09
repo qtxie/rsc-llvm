@@ -183,7 +183,7 @@ struct If : Node {
 struct Either : Node {
     Node *cond;
     Node *then_body;
-    Node *els_body;
+    Node *else_body;
 };
 
 struct Context : Node {
@@ -250,6 +250,7 @@ private:
     }
 
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
+    Node * parseEither(Token *tok, Token **rest);
     Node * parseIf(Token *tok, Token **rest);
     Node * parseCatch(Token *tok, Token **rest);
     Node * parseThrow(Token *tok, Token **rest);

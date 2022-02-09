@@ -180,6 +180,11 @@ struct If : Node {
     Node *body;
 };
 
+struct While : Node {
+    Node *cond;
+    Node *body;
+};
+
 struct Either : Node {
     Node *cond;
     Node *then_body;
@@ -250,6 +255,7 @@ private:
     }
 
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
+    Node * parseWhile(Token *tok, Token **rest);
     Node * parseEither(Token *tok, Token **rest);
     Node * parseIf(Token *tok, Token **rest);
     Node * parseCatch(Token *tok, Token **rest);

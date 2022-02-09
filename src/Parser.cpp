@@ -1058,6 +1058,13 @@ Node * Parser::parseAssignment(Token *tok, Token **rest) {
     return node;
 }
 
+Node * Parser::parseWhile(Token *tok, Token **rest) {
+    auto node = newNode<While>(NodeWhile, tok);
+    node->cond = parseCode(tok->next, &tok, curCtx);
+    node->body = parseCode(tok->next, rest, curCtx);
+    return node;
+}
+
 Node * Parser::parseEither(Token *tok, Token **rest) {
     auto node = newNode<Either>(NodeEither, tok);
     node->cond = parseExpr(tok->next, &tok);
@@ -1124,7 +1131,7 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
         case TokenIdEither: node = parseEither(tok, &tok); break;
         case TokenIdCase:
         case TokenIdSwitch:
-        case TokenIdWhile:
+        case TokenIdWhile: node = parseWhile(tok, &tok); break;
         case TokenIdUntil:
         case TokenIdLoop:
         case TokenIdReturn: node = parseReturn(tok, &tok); break;

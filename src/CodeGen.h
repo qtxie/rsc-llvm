@@ -46,17 +46,18 @@ public:
     llvm::Value * readVariable(Variable *var);
     llvm::Value * getPointer(Node *node);
 
+    llvm::Value * emitCode(Node *node);
     llvm::Value * emitEither(Either *node);
-    llvm::Value * emitIf(If *node);
     llvm::Value * emitCall(FnCall *call);
     llvm::Value * emitBinOp(Node *node);
     llvm::Value * emitExpr(Node *node);
     llvm::Value * emitAssignment(Assignment *node);
     llvm::GlobalVariable * emitGlobalVar(Variable *var);
 
+    void emitIf(If *node);
+    void emitWhile(While *node);
     void emitCatch(Catch *node);
     void emitThrow(Throw *node);
-    void emitCode(Node *node);
     void emitMainFunc(Function *fn);
     void emitFunc(Function *fn);
     void emitFunctions(Context *ctx);

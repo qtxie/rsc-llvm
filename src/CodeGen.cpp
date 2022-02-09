@@ -89,7 +89,7 @@ llvm::Value * CodeGen::emitEither(Either *node) {
     return nullptr;
 }
 
-llvm::Value * CodeGen::emitIf(If *node) {
+void CodeGen::emitIf(If *node) {
     auto if_bb = createBasicBlock("if.body");
     auto after_if_bb = createBasicBlock("after.if");
 
@@ -101,7 +101,29 @@ llvm::Value * CodeGen::emitIf(If *node) {
     if (!curBB->getTerminator())
         builder->CreateBr(after_if_bb);
     setCurrentBasicBlock(after_if_bb);
-    return nullptr;
+}
+
+void CodeGen::emitWhile(While *node) {
+    llvm::BasicBlock *while_cond;
+    auto while_body = createBasicBlock("while.body");
+    auto after_while = createBasicBlock("after.while");
+
+    if (curBB->empty()) {
+        curBB->setName("while.cond");
+        while_cond = curBB;
+    } else {
+        while_cond = createBasicBlock("while.cond");
+        builder->CreateBr(while_cond);
+        setCurrentBasicBlock(while_cond);
+    }
+
+    llvm::Value *cond = emitCode(node->cond);
+    builder->CreateCondBr(cond, while_body, after_while);
+
+    setCurrentBasicBlock(while_body);
+    emitCode(node->body);
+    builder->CreateBr(while_cond);
+    setCurrentBasicBlock(after_while);
 }
 
 void CodeGen::handleThrow() {
@@ -175,12 +197,13 @@ llvm::Value * CodeGen::emitBinOp(Node *node) {
 }
 
 llvm::Value * CodeGen::emitExpr(Node *node) {
-    LOG() << NodeName[node->id] << '\n';
+    LOG << NodeName[node->id] << '\n';
 
     llvm::Value *val = nullptr;
     switch (node->id)
     {
-    case NodeIf:     val = emitIf((If *)node); break;
+    case NodeIf:     emitIf((If *)node); break;
+    case NodeWhile:  emitWhile((While *)node); break;
     case NodeEither: val = emitEither((Either *)node); break;
     case NodeFnCall: val = emitCall((FnCall *)node); break;
     case NodeVar:    val = readVariable((Variable *)node); break;
@@ -205,7 +228,7 @@ llvm::Value * CodeGen::emitAssignment(Assignment *node) {
     }
 
     if (left->ir) {  // assingment
-
+        builder->CreateStore(val, left->ir);
     } else {         // declare global variable
         auto var = emitGlobalVar(left);
         if (llvm::isa<llvm::Constant>(val))
@@ -231,7 +254,8 @@ void CodeGen::emitCatch(Catch *node) {
     in_catch = false;
 }
 
-void CodeGen::emitCode(Node *node) {
+llvm::Value * CodeGen::emitCode(Node *node) {
+    llvm::Value *val = nullptr;
     while (node) {
         llvm::Value *inst = nullptr;
         LOG() << NodeName[node->id] << '\n';
@@ -240,13 +264,14 @@ void CodeGen::emitCode(Node *node) {
         case NodeReturn: builder->CreateRet(emitExpr(((Return *)node)->expr)); break;
         case NodeThrow: emitThrow((Throw *)node); break;
         case NodeCatch: emitCatch((Catch *)node); break;
-        case NodeAssign: emitAssignment((Assignment *)node); break;
+        case NodeAssign: val = emitAssignment((Assignment *)node); break;
         default:
-            emitExpr(node);
+            val = emitExpr(node);
             break;
         }
         node = node->next;
     }
+    return val;
 }
 
 llvm::FunctionType * CodeGen::createFuncType(Function *fn) {

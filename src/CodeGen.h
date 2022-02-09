@@ -26,6 +26,9 @@ private:
     llvm::Value *curVal;
     llvm::Value *catchFilter;
     llvm::BasicBlock *afterCatchBB;
+    llvm::BasicBlock *continueBB;
+    llvm::BasicBlock *breakBB;
+    bool inLoop;
     bool in_catch;
     bool in_main_func;
     llvm::Value *firstLocalVar;
@@ -54,6 +57,8 @@ public:
     llvm::Value * emitAssignment(Assignment *node);
     llvm::GlobalVariable * emitGlobalVar(Variable *var);
 
+    void emitBreak(Node *node);
+    void emitContinue(Node *node);
     void emitIf(If *node);
     void emitWhile(While *node);
     void emitCatch(Catch *node);

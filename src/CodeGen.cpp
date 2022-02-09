@@ -44,6 +44,7 @@ CodeGen::CodeGen(Compilation &c) : comp(c) {
     f64_ty = llvm::Type::getDoubleTy(Ctx);
     bool_ty = llvm::Type::getInt1Ty(Ctx);
     byte_ty = llvm::Type::getInt8Ty(Ctx);
+    inLoop = false;
     in_catch = false;
     in_main_func = false;
 }
@@ -103,7 +104,27 @@ void CodeGen::emitIf(If *node) {
     setCurrentBasicBlock(after_if_bb);
 }
 
+void CodeGen::emitBreak(Node *node) {
+    if (inLoop) {
+        builder->CreateBr(breakBB);
+    } else {
+        error(node, err_no_loop, "BREAK");
+    }
+}
+
+void CodeGen::emitContinue(Node *node) {
+    if (inLoop) {
+        builder->CreateBr(continueBB);
+    } else {
+        error(node, err_no_loop, "CONTINUE");
+    }
+}
+
 void CodeGen::emitWhile(While *node) {
+    auto in_loop = inLoop;
+    auto conti_bb = continueBB;
+    auto break_bb = breakBB;
+
     llvm::BasicBlock *while_cond;
     auto while_body = createBasicBlock("while.body");
     auto after_while = createBasicBlock("after.while");
@@ -121,7 +142,15 @@ void CodeGen::emitWhile(While *node) {
     builder->CreateCondBr(cond, while_body, after_while);
 
     setCurrentBasicBlock(while_body);
+
+    continueBB = while_cond;
+    breakBB = after_while;
+    inLoop = true;
     emitCode(node->body);
+    inLoop = in_loop;
+    breakBB = break_bb;
+    continueBB = conti_bb;
+
     builder->CreateBr(while_cond);
     setCurrentBasicBlock(after_while);
 }
@@ -202,8 +231,6 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     llvm::Value *val = nullptr;
     switch (node->id)
     {
-    case NodeIf:     emitIf((If *)node); break;
-    case NodeWhile:  emitWhile((While *)node); break;
     case NodeEither: val = emitEither((Either *)node); break;
     case NodeFnCall: val = emitCall((FnCall *)node); break;
     case NodeVar:    val = readVariable((Variable *)node); break;
@@ -261,6 +288,10 @@ llvm::Value * CodeGen::emitCode(Node *node) {
         LOG() << NodeName[node->id] << '\n';
         switch (node->id)
         {
+        case NodeIf:     emitIf((If *)node); break;
+        case NodeWhile:  emitWhile((While *)node); break;
+        case NodeBreak:  emitBreak(node); break;
+        case NodeContinue: emitContinue(node); break;
         case NodeReturn: builder->CreateRet(emitExpr(((Return *)node)->expr)); break;
         case NodeThrow: emitThrow((Throw *)node); break;
         case NodeCatch: emitCatch((Catch *)node); break;
@@ -491,7 +522,7 @@ llvm::Type * CodeGen::llvmType(const Node *node) {
     //case TypeArray:  return llvm::ArrayType::get(byte_ty, ty->tok->len);
     case TypeFunc: break; 
     case TypeVoid:
-            comp.error(node->tok, err_not_initialized, node->tok->str());
+            error(node, err_not_initialized, node->tok->str());
     default:
         break;
     }

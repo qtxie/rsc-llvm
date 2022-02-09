@@ -1134,6 +1134,8 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
         case TokenIdWhile: node = parseWhile(tok, &tok); break;
         case TokenIdUntil:
         case TokenIdLoop:
+        case TokenIdBreak: node = newNode<Node>(NodeBreak, tok); break;
+        case TokenIdContinue: node = newNode<Node>(NodeContinue, tok); break;
         case TokenIdReturn: node = parseReturn(tok, &tok); break;
         case TokenIdThrow: node = parseThrow(tok, &tok); break;
         case TokenIdCatch: node = parseCatch(tok, &tok); break;

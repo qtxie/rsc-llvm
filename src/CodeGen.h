@@ -50,6 +50,7 @@ public:
     llvm::Value * getPointer(Node *node);
 
     llvm::Value * emitCode(Node *node);
+    llvm::Value * emitSwitch(Switch *node);
     llvm::Value * emitEither(Either *node);
     llvm::Value * emitCall(FnCall *call);
     llvm::Value * emitBinOp(Node *node);
@@ -82,7 +83,11 @@ public:
 private:
     void mangleName(Token *tok, Context *ctx, std::string &result);
 
-    llvm::BasicBlock * createBasicBlock(const llvm::Twine &name, llvm::BasicBlock *insertBefore = nullptr) {
+    llvm::ConstantInt * getConstantInt(Node *node) {
+        return llvm::ConstantInt::get(i32_ty, ((Type *)node)->data.value);
+    }
+
+    llvm::BasicBlock * createBasicBlock(const llvm::Twine &name = "", llvm::BasicBlock *insertBefore = nullptr) {
         return llvm::BasicBlock::Create(Ctx, name, curFunc, insertBefore);
     }
     void setCurrentBasicBlock(llvm::BasicBlock *bb) {

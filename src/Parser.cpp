@@ -1058,6 +1058,49 @@ Node * Parser::parseAssignment(Token *tok, Token **rest) {
     return node;
 }
 
+Node * Parser::parseSwitch(Token *tok, Token **rest) {
+    auto node = newNode<Switch>(NodeSwitch, tok);
+    node->value = parseExpr(tok->next, &tok);
+    node->cases = new SwitchCases;
+
+    tok = skip(tok->next, TokenIdLBracket, '[');
+    Node head{};
+    Node *cur = &head;
+    while (tok->id != TokenIdEof) {
+        if (tok->id == TokenIdWord && tok->equals("default")) {
+            node->defaultCase = parseCode(tok->next, &tok, curCtx);
+            *rest = tok->next;
+            expect(*rest, TokenIdRBracket, ']');
+            return node;
+        }
+
+        auto val = parseExpr(tok, &tok);
+        if (val->id != TypeInt && val->id != TypeByte)
+            comp.error(tok, err_expected, "integer! or byte! literal value");
+        cur = cur->next = val;
+
+        tok = tok->next;
+        if (tok->id == TokenIdLBracket) {    // body block for current case
+            auto body = parseCode(tok, &tok, curCtx);
+            cur = head.next;
+            do {
+                node->cases->push_back({cur, body});
+                cur = cur->next;
+            } while (cur);
+            cur = &head;
+            tok = tok->next;
+        }
+
+        if (tok->id == TokenIdRBracket) {
+            if (cur != &head) comp.error(tok, err_expected, "body block");
+            *rest = tok;
+            break;
+        }
+    }
+    if (node->cases->empty()) comp.error(tok, err_expected, "case in switch");
+    return node;
+}
+
 Node * Parser::parseLoop(Token *tok, Token **rest) {
     auto node = newNode<Loop>(NodeLoop, tok);
     node->counter = parseExpr(tok->next, &tok);
@@ -1143,7 +1186,7 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
         case TokenIdIf: node = parseIf(tok, &tok); break;
         case TokenIdEither: node = parseEither(tok, &tok); break;
         case TokenIdCase:
-        case TokenIdSwitch:
+        case TokenIdSwitch: node = parseSwitch(tok, &tok); break;
         case TokenIdWhile: node = parseWhile(tok, &tok); break;
         case TokenIdUntil: node = parseUntil(tok, &tok); break;
         case TokenIdLoop: node = parseLoop(tok, &tok); break;

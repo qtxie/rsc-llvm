@@ -69,7 +69,7 @@ OPERATOR(Div,                "/")
 OPERATOR(Modulo,             "//")
 OPERATOR(Remainder,          "%")
 
-// @@ Note: Keep in ascend order
+// @@ Note: Keep it in ascend order
 KEYWORD(Star,                "*")
 KEYWORD(Less,                "<")
 KEYWORD(ShiftLeft,           "<<")

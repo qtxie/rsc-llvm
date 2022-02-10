@@ -68,6 +68,33 @@ llvm::GlobalVariable * CodeGen::emitGlobalVar(Variable *var) {
     return v;
 }
 
+llvm::Value * CodeGen::emitSwitch(Switch *node) {
+    auto default_bb = createBasicBlock("switch.default");
+    auto after_switch = createBasicBlock("after.switch");
+    auto switch_op = builder->CreateSwitch(emitExpr(node->value), default_bb, node->cases->size());
+
+    for (auto &[val, body] : *node->cases) {
+        auto dest_bb = createBasicBlock();
+        setCurrentBasicBlock(dest_bb);
+        emitCode(body);
+        if (!curBB->getTerminator())
+            builder->CreateBr(after_switch);
+        switch_op->addCase(getConstantInt(val), dest_bb);
+    }
+    
+    setCurrentBasicBlock(default_bb);
+    if (node->defaultCase) {
+        emitCode(node->defaultCase);
+        if (!curBB->getTerminator())
+            builder->CreateBr(after_switch);
+    } else {
+        //TBD: throw an exception
+    }
+
+    setCurrentBasicBlock(after_switch);
+    return nullptr;
+}
+
 llvm::Value * CodeGen::emitEither(Either *node) {
     auto if_then = createBasicBlock("if.then");
     auto if_else = createBasicBlock("if.else");
@@ -295,12 +322,13 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     llvm::Value *val = nullptr;
     switch (node->id)
     {
+    case NodeSwitch: val = emitSwitch((Switch *)node); break;
     case NodeEither: val = emitEither((Either *)node); break;
     case NodeFnCall: val = emitCall((FnCall *)node); break;
     case NodeVar:    val = readVariable((Variable *)node); break;
     case NodeIdent:  val = readVariable(((Identifier *)node)->var); break;
     case NodePtr:    val = getPointer(((Pointer *)node)->value); break;
-    case TypeInt:    val = llvm::ConstantInt::get(i32_ty, ((Type *)node)->data.value); break;
+    case TypeInt:    val = getConstantInt(node); break;
     case TypeCStr:   val = builder->CreateGlobalStringPtr(node->tok->str(), "", 0, M); break;
     default:         val = emitBinOp(node); break;
     }

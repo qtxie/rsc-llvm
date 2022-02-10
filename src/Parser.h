@@ -175,6 +175,14 @@ struct Catch : Node {
     Node *handler;
 };
 
+typedef std::vector<std::pair<Node *, Node *>> SwitchCases;
+
+struct Switch : Node {
+    Node *value;
+    SwitchCases *cases;
+    Node *defaultCase;
+};
+
 struct If : Node {
     Node *cond;
     Node *body;
@@ -264,6 +272,7 @@ private:
     }
 
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
+    Node * parseSwitch(Token *tok, Token **rest);
     Node * parseLoop(Token *tok, Token **rest);
     Node * parseUntil(Token *tok, Token **rest);
     Node * parseWhile(Token *tok, Token **rest);

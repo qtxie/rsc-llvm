@@ -66,6 +66,7 @@ NODE(Switch,             "switch")
 NODE(Case,               "case")
 NODE(While,              "while")
 NODE(Until,              "until")
+NODE(Loop,               "loop")
 
 #undef TYPE
 #undef NODE

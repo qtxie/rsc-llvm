@@ -120,6 +120,39 @@ void CodeGen::emitContinue(Node *node) {
     }
 }
 
+void CodeGen::emitLoop(Loop *node) {
+    auto in_loop = inLoop;
+    auto conti_bb = continueBB;
+    auto break_bb = breakBB;
+
+    auto counter = builder->CreateAlloca(i32_ty);
+    builder->CreateStore(emitExpr(node->counter), counter);
+
+    auto *loop_cond = createBasicBlock("loop.cond");
+    auto *loop_body = createBasicBlock("loop.body");
+    auto after_loop = createBasicBlock("after.loop");
+
+    builder->CreateBr(loop_cond);
+    setCurrentBasicBlock(loop_cond);
+    auto cond = builder->CreateICmpEQ(builder->CreateLoad(counter), builder->getInt32(0));
+    builder->CreateCondBr(cond, after_loop, loop_body);
+
+    setCurrentBasicBlock(loop_body);
+    auto new_val = builder->CreateNUWSub(builder->CreateLoad(counter), builder->getInt32(1));
+    builder->CreateStore(new_val, counter);
+
+    continueBB = loop_cond;
+    breakBB = after_loop;
+    inLoop = true;
+    emitCode(node->body);
+    inLoop = in_loop;
+    breakBB = break_bb;
+    continueBB = conti_bb;
+
+    if (!curBB->getTerminator()) builder->CreateBr(loop_cond);
+    setCurrentBasicBlock(after_loop);
+}
+
 void CodeGen::emitUntil(Until *node) {
     auto in_loop = inLoop;
     auto conti_bb = continueBB;
@@ -320,6 +353,7 @@ llvm::Value * CodeGen::emitCode(Node *node) {
         switch (node->id)
         {
         case NodeIf:     emitIf((If *)node); break;
+        case NodeLoop:   emitLoop((Loop *)node); break;
         case NodeUntil:  emitUntil((Until *)node); break;
         case NodeWhile:  emitWhile((While *)node); break;
         case NodeBreak:  emitBreak(node); break;

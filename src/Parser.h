@@ -185,6 +185,10 @@ struct While : Node {
     Node *body;
 };
 
+struct Until : Node {
+    Node *body;
+};
+
 struct Either : Node {
     Node *cond;
     Node *then_body;
@@ -255,6 +259,7 @@ private:
     }
 
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
+    Node * parseUntil(Token *tok, Token **rest);
     Node * parseWhile(Token *tok, Token **rest);
     Node * parseEither(Token *tok, Token **rest);
     Node * parseIf(Token *tok, Token **rest);

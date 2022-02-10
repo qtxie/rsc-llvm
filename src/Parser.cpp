@@ -1058,6 +1058,12 @@ Node * Parser::parseAssignment(Token *tok, Token **rest) {
     return node;
 }
 
+Node * Parser::parseUntil(Token *tok, Token **rest) {
+    auto node = newNode<Until>(NodeUntil, tok);
+    node->body = parseCode(tok->next, rest, curCtx);
+    return node;
+}
+
 Node * Parser::parseWhile(Token *tok, Token **rest) {
     auto node = newNode<While>(NodeWhile, tok);
     node->cond = parseCode(tok->next, &tok, curCtx);
@@ -1132,7 +1138,7 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
         case TokenIdCase:
         case TokenIdSwitch:
         case TokenIdWhile: node = parseWhile(tok, &tok); break;
-        case TokenIdUntil:
+        case TokenIdUntil: node = parseUntil(tok, &tok); break;
         case TokenIdLoop:
         case TokenIdBreak: node = newNode<Node>(NodeBreak, tok); break;
         case TokenIdContinue: node = newNode<Node>(NodeContinue, tok); break;

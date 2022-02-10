@@ -60,6 +60,7 @@ public:
     void emitBreak(Node *node);
     void emitContinue(Node *node);
     void emitIf(If *node);
+    void emitUntil(Until *node);
     void emitWhile(While *node);
     void emitCatch(Catch *node);
     void emitThrow(Throw *node);

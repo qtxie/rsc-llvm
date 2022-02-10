@@ -120,6 +120,37 @@ void CodeGen::emitContinue(Node *node) {
     }
 }
 
+void CodeGen::emitUntil(Until *node) {
+    auto in_loop = inLoop;
+    auto conti_bb = continueBB;
+    auto break_bb = breakBB;
+
+    llvm::BasicBlock *until_body;
+    auto after_until = createBasicBlock("after.until");
+
+    if (curBB->empty()) {
+        curBB->setName("until.body");
+        until_body = curBB;
+    } else {
+        until_body = createBasicBlock("until.body");
+        builder->CreateBr(until_body);
+        setCurrentBasicBlock(until_body);
+    }
+
+    continueBB = until_body;
+    breakBB = after_until;
+    inLoop = true;
+
+    llvm::Value *cond = emitCode(node->body);
+    builder->CreateCondBr(cond, after_until, until_body);
+
+    inLoop = in_loop;
+    breakBB = break_bb;
+    continueBB = conti_bb;
+
+    setCurrentBasicBlock(after_until);
+}
+
 void CodeGen::emitWhile(While *node) {
     auto in_loop = inLoop;
     auto conti_bb = continueBB;
@@ -151,7 +182,7 @@ void CodeGen::emitWhile(While *node) {
     breakBB = break_bb;
     continueBB = conti_bb;
 
-    builder->CreateBr(while_cond);
+    if (!curBB->getTerminator()) builder->CreateBr(while_cond);
     setCurrentBasicBlock(after_while);
 }
 
@@ -289,6 +320,7 @@ llvm::Value * CodeGen::emitCode(Node *node) {
         switch (node->id)
         {
         case NodeIf:     emitIf((If *)node); break;
+        case NodeUntil:  emitUntil((Until *)node); break;
         case NodeWhile:  emitWhile((While *)node); break;
         case NodeBreak:  emitBreak(node); break;
         case NodeContinue: emitContinue(node); break;

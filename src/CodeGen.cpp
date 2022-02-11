@@ -68,6 +68,10 @@ llvm::GlobalVariable * CodeGen::emitGlobalVar(Variable *var) {
     return v;
 }
 
+llvm::Value * CodeGen::emitCase(Case *node) {
+    return emitEither(node->cases);
+}
+
 llvm::Value * CodeGen::emitSwitch(Switch *node) {
     auto default_bb = createBasicBlock("switch.default");
     auto after_switch = createBasicBlock("after.switch");
@@ -109,7 +113,7 @@ llvm::Value * CodeGen::emitEither(Either *node) {
         builder->CreateBr(after_if);
 
     setCurrentBasicBlock(if_else);
-    emitCode(node->else_body);
+    if (node->else_body) emitCode(node->else_body);
     if (!curBB->getTerminator())
         builder->CreateBr(after_if);
 
@@ -322,8 +326,9 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     llvm::Value *val = nullptr;
     switch (node->id)
     {
-    case NodeSwitch: val = emitSwitch((Switch *)node); break;
     case NodeEither: val = emitEither((Either *)node); break;
+    case NodeSwitch: val = emitSwitch((Switch *)node); break;
+    case NodeCase:   val = emitCase((Case *)node); break;
     case NodeFnCall: val = emitCall((FnCall *)node); break;
     case NodeVar:    val = readVariable((Variable *)node); break;
     case NodeIdent:  val = readVariable(((Identifier *)node)->var); break;

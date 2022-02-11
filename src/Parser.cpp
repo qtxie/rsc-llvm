@@ -1028,6 +1028,9 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
             tok = tok->next;
             expect(tok, TokenIdRParen, ')');
             break;
+        case TokenIdEither: node = parseEither(tok, &tok); break;
+        case TokenIdCase:   node = parseCase(tok, &tok); break;
+        case TokenIdSwitch: node = parseSwitch(tok, &tok); break;
         case TokenIdFunc:  // anonymous function
         case TokenIdAlias:
         default:
@@ -1055,6 +1058,44 @@ Node * Parser::parseAssignment(Token *tok, Token **rest) {
 
     if (is_set)
         node = newNode<Assignment>(NodeAssign, node, parseAssignment(tok->next, rest));
+    return node;
+}
+
+Node * Parser::parseCase(Token *tok, Token **rest) {
+    auto node = newNode<Case>(NodeCase, tok);
+
+    tok = skip(tok->next, TokenIdLBracket, '[');
+    while (tok->id != TokenIdEof) {
+        if (tok->id == TokenIdTrue) {   // catch-all rule
+            auto true_case = parseCode(tok->next, &tok, curCtx);
+            *rest = tok->next;
+            expect(*rest, TokenIdRBracket, ']');
+            if (node->cases) {
+                node->cases->else_body = true_case;
+                return node;
+            } else {
+                return true_case;
+            }
+        }
+
+        auto case_node = newNode<Either>(NodeEither, tok);
+        if (node->cases)
+            node->cases->else_body = case_node;
+        else
+            node->cases = case_node;
+
+        case_node->cond = parseExpr(tok, &tok);
+
+        tok = tok->next;
+        expect(tok, TokenIdLBracket, '[');
+        case_node->then_body = parseCode(tok, &tok, curCtx);
+
+        tok = tok->next;
+        if (tok->id == TokenIdRBracket) {
+            *rest = tok;
+            break;
+        }
+    }
     return node;
 }
 
@@ -1097,7 +1138,7 @@ Node * Parser::parseSwitch(Token *tok, Token **rest) {
             break;
         }
     }
-    if (node->cases->empty()) comp.error(tok, err_expected, "case in switch");
+    if (node->cases->empty()) comp.error(node->tok, err_expected, "case in switch");
     return node;
 }
 
@@ -1185,7 +1226,7 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
         // statement
         case TokenIdIf: node = parseIf(tok, &tok); break;
         case TokenIdEither: node = parseEither(tok, &tok); break;
-        case TokenIdCase:
+        case TokenIdCase: node = parseCase(tok, &tok); break;
         case TokenIdSwitch: node = parseSwitch(tok, &tok); break;
         case TokenIdWhile: node = parseWhile(tok, &tok); break;
         case TokenIdUntil: node = parseUntil(tok, &tok); break;

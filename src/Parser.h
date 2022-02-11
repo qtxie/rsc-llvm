@@ -208,6 +208,10 @@ struct Either : Node {
     Node *else_body;
 };
 
+struct Case : Node {
+    Either *cases;
+};
+
 struct Context : Node {
     HashMap decls;             // for struct, enum, function, alias, context, variable
     Function *func; 
@@ -272,6 +276,7 @@ private:
     }
 
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
+    Node * parseCase(Token *tok, Token **rest);
     Node * parseSwitch(Token *tok, Token **rest);
     Node * parseLoop(Token *tok, Token **rest);
     Node * parseUntil(Token *tok, Token **rest);

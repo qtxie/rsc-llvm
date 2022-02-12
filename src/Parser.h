@@ -110,9 +110,8 @@ struct Function : Type {
     std::vector<FnCall *> *calls;
     IrValue *ir;
 
-    bool isThrowable() {
-        return static_cast<bool>(attrs & FuncThrow);
-    }
+    bool isThrowable() {return static_cast<bool>(attrs & FuncThrow);}
+    bool isExtern() {return static_cast<bool>(attrs & FuncExtern);}
 
     void addAttr(FuncAttr attr) {
         using namespace llvm;

@@ -278,8 +278,9 @@ llvm::Value * CodeGen::emitCall(FnCall *call) {
     }
 
     LOG() << call->tok->str() << " " << argv.size() << "\n";
-    auto call_inst = llvm::CallInst::Create(func->getFunctionType(), func, argv, "");
-    builder->Insert(call_inst);
+    auto call_inst = builder->CreateCall(func->getFunctionType(), func, argv);
+    call_inst->setCallingConv(func->getCallingConv());
+
     if (call->fn->isThrowable()) handleThrow();
     return call_inst;
 }
@@ -433,7 +434,9 @@ llvm::Value * CodeGen::createFunc(Function *fn, Context *ctx) {
     auto func_ty = createFuncType(fn);
     std::string name;
     mangleName(fn->import_name, ctx, name);
-    auto func = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, name, *M);
+    auto linkage = fn->isExtern() ? GlobalValue::ExternalLinkage : GlobalValue::InternalLinkage;
+    auto func = llvm::Function::Create(func_ty, linkage, name, *M);
+    //func->addFnAttr(llvm::Attribute::NoBuiltin);
     fn->ir = func;
 
     if (auto lib = fn->data.import_lib) import_libs.insert(lib->str());
@@ -518,7 +521,13 @@ void CodeGen::emitFunctions(Context *ctx) {
 void CodeGen::emitMainFunc(Function *fn) {
     LOG() << '\n';
     auto func_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), false);
-    fn->ir = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, comp.entryFuncName, *M);
+    auto llvm_fn = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, comp.entryFuncName, *M);
+    llvm_fn->addFnAttr(llvm::Attribute::NoBuiltin);
+    llvm_fn->addFnAttr(llvm::Attribute::NoInline);
+    llvm_fn->addFnAttr(llvm::Attribute::NoReturn);
+    llvm_fn->addFnAttr(llvm::Attribute::get(Ctx, llvm::Attribute::StackAlignment, 16));
+
+    fn->ir = llvm_fn;
     in_main_func = true;
     emitFunc(fn);
     if (fn->isThrowable() && !afterCatchBB->getTerminator()) {

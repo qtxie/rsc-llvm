@@ -1063,21 +1063,9 @@ Node * Parser::parseAssignment(Token *tok, Token **rest) {
     return node;
 }
 
-void Parser::addTempLocalVar() {
-    auto fn = curCtx->func;
-    if (!fn->hasAttr(FuncHasTempVar)) {
-        fn->addAttr(FuncHasTempVar);
-        auto var = newNode<Variable>(NodeVar, &tempVarTok);
-        var->type = &boolTy;
-        var->next = fn->locals;
-        fn->locals = var;
-        fn->n_locals++;
-    }
-}
-
 Node * Parser::parseAnyAll(Token *tok, Token **rest, NodeId id) {
+    addCurFuncAttr(FuncHasAnyAll);
     auto node = newNode<Any>(id, tok);
-    addTempLocalVar();
     tok = skip(tok->next, TokenIdLBracket, '[');
     Node head{};
     Node *cur = &head;
@@ -1175,6 +1163,7 @@ Node * Parser::parseSwitch(Token *tok, Token **rest) {
 }
 
 Node * Parser::parseLoop(Token *tok, Token **rest) {
+    addCurFuncAttr(FuncHasLoop);
     auto node = newNode<Loop>(NodeLoop, tok);
     node->counter = parseExpr(tok->next, &tok);
     node->body = parseCode(tok->next, rest, curCtx);

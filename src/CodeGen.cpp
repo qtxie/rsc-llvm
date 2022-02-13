@@ -40,6 +40,7 @@ CodeGen::CodeGen(Compilation &c) : comp(c) {
     M->setDataLayout(c.TM->createDataLayout());
     builder = new llvm::IRBuilder<>(Ctx);
     i32_ty = llvm::Type::getInt32Ty(Ctx);
+    i64_ty = llvm::Type::getInt64Ty(Ctx);
     f32_ty = llvm::Type::getFloatTy(Ctx);
     f64_ty = llvm::Type::getDoubleTy(Ctx);
     bool_ty = llvm::Type::getInt1Ty(Ctx);
@@ -47,6 +48,7 @@ CodeGen::CodeGen(Compilation &c) : comp(c) {
     inLoop = false;
     in_catch = false;
     in_main_func = false;
+    firstLocalVar = nullptr;
 }
 
 llvm::Value * CodeGen::readVariable(Variable *var) {
@@ -156,7 +158,7 @@ void CodeGen::emitLoop(Loop *node) {
     auto conti_bb = continueBB;
     auto break_bb = breakBB;
 
-    auto counter = builder->CreateAlloca(i32_ty);
+    auto counter = loopCounter;
     builder->CreateStore(emitExpr(node->counter), counter);
 
     auto *loop_cond = createBasicBlock("loop.cond");
@@ -334,16 +336,16 @@ llvm::Value * CodeGen::emitAll(Any *node) {
         builder->CreateCondBr(llvm_cond, if_then, if_else);
 
         setCurrentBasicBlock(if_else);
-        builder->CreateStore(llvm_cond, firstLocalVar);
+        builder->CreateStore(llvm_cond, tempVarBool);
         builder->CreateBr(after_all);
 
         setCurrentBasicBlock(if_then);
         cond = cond->next;
     }
-    builder->CreateStore(llvm_cond, firstLocalVar);
+    builder->CreateStore(llvm_cond, tempVarBool);
     builder->CreateBr(after_all);
     setCurrentBasicBlock(after_all);
-    return builder->CreateLoad(firstLocalVar);
+    return builder->CreateLoad(tempVarBool);
 }
 
 llvm::Value * CodeGen::emitAny(Any *node) {
@@ -359,16 +361,16 @@ llvm::Value * CodeGen::emitAny(Any *node) {
         builder->CreateCondBr(llvm_cond, if_then, if_else);
 
         setCurrentBasicBlock(if_then);
-        builder->CreateStore(llvm_cond, firstLocalVar);
+        builder->CreateStore(llvm_cond, tempVarBool);
         builder->CreateBr(after_any);
 
         setCurrentBasicBlock(if_else);
         cond = cond->next;
     }
-    builder->CreateStore(llvm_cond, firstLocalVar);
+    builder->CreateStore(llvm_cond, tempVarBool);
     builder->CreateBr(after_any);
     setCurrentBasicBlock(after_any);
-    return builder->CreateLoad(firstLocalVar);
+    return builder->CreateLoad(tempVarBool);
 }
 
 llvm::Value * CodeGen::emitExpr(Node *node) {
@@ -544,9 +546,12 @@ void CodeGen::emitFunc(Function *fn) {
     }
     // allocate local variables on stack
     alloca_on_stack(fn->locals);
-    if (fn->hasAttr(FuncHasTempVar)) firstLocalVar = ((Variable *)fn->locals)->ir;
+    if (fn->hasAttr(FuncHasAnyAll)) tempVarBool = builder->CreateAlloca(bool_ty);
+    if (fn->hasAttr(FuncHasLoop)) loopCounter = builder->CreateAlloca(i32_ty);
+
     if (in_main_func && fn->isThrowable()) {
         afterCatchBB = createBasicBlock("after.catch");
+        firstLocalVar = ((Variable *)fn->locals)->ir;
     }
 
     emitCode(fn->body.node);

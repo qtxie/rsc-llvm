@@ -34,7 +34,8 @@ enum FuncAttr {
     FuncInline       = 0x0100,
     FuncExtern       = 0x0200,
     FuncThrow        = 0x0400,
-    FuncHasTempVar   = 0x0800,
+    FuncHasAnyAll    = 0x0800,
+    FuncHasLoop      = 0x1000,
 
     FuncAttrEnd,
     LLVM_MARK_AS_BITMASK_ENUM(/* LargestValue = */ FuncAttrEnd)
@@ -244,10 +245,8 @@ private:
 
     SmallVector<std::tuple<Function*, FnCall*, bool>> unresolvedCalls;
     Token hiddenParamTok;
-    Token tempVarTok;
     Type uintPtrTy;
     Type uintTy;
-    Type boolTy;
     NodeBuffer nodeBuf;
 
     Logger LOG;
@@ -257,10 +256,6 @@ public:
         hiddenParamTok.id = TokenIdWord;
         hiddenParamTok.loc = "__r/s_throw_";
         hiddenParamTok.len = std::char_traits<char>::length(hiddenParamTok.loc);
-        tempVarTok.id = TokenIdWord;
-        tempVarTok.loc = "__r/s_temp_";
-        tempVarTok.len = std::char_traits<char>::length(tempVarTok.loc);
-        boolTy = Type{TypeBool, false, 1, 1, nullptr, nullptr, TypeBool};
         uintTy = Type{TypeInt, false, 4, 4, nullptr, nullptr, TypeInt};
         uintPtrTy.id = TypePtr;
         uintPtrTy.data.type = &uintTy;
@@ -330,8 +325,6 @@ private:
     void resolveDeclarations(Context *ctx);
 
     Variable *newVar(Token *tok, bool is_global = false);
-
-    void addTempLocalVar();
 
     Context *newContext(Token *main_tok) {
         Context *c = new (nodeBuf.alloc(sizeof(Context))) Context;

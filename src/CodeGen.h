@@ -32,10 +32,13 @@ private:
     bool in_catch;
     bool in_main_func;
     llvm::Value *firstLocalVar;
+    llvm::Value *loopCounter;
+    llvm::Value *tempVarBool;
 
     llvm::IntegerType *bool_ty;
     llvm::IntegerType *byte_ty;
     llvm::IntegerType *i32_ty;
+    llvm::IntegerType *i64_ty;
     llvm::Type *f32_ty;
     llvm::Type *f64_ty;
 

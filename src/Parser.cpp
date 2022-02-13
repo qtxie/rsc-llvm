@@ -187,7 +187,7 @@ constexpr auto genDatatypes()
         {"float!", Type{TypeDouble, false, 8, 8, nullptr, nullptr, TypeDouble}},
         {"float32!", Type{TypeFloat, false, 4, 4, nullptr, nullptr, TypeFloat}},
         {"integer!", Type{TypeInt, true, 4, 4, nullptr, nullptr, TypeInt}},
-        {"logic!", Type{TypeBool, true, 1, 1, nullptr, nullptr, TypeBool}},
+        {"logic!", Type{TypeBool, false, 1, 1, nullptr, nullptr, TypeBool}},
     }};
     return datatypes;
 }
@@ -1028,6 +1028,8 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
             tok = tok->next;
             expect(tok, TokenIdRParen, ')');
             break;
+        case TokenIdAny:    node = parseAny(tok, &tok); break;
+        case TokenIdAll:    node = parseAll(tok, &tok); break;
         case TokenIdEither: node = parseEither(tok, &tok); break;
         case TokenIdCase:   node = parseCase(tok, &tok); break;
         case TokenIdSwitch: node = parseSwitch(tok, &tok); break;
@@ -1058,6 +1060,36 @@ Node * Parser::parseAssignment(Token *tok, Token **rest) {
 
     if (is_set)
         node = newNode<Assignment>(NodeAssign, node, parseAssignment(tok->next, rest));
+    return node;
+}
+
+void Parser::addTempLocalVar() {
+    auto fn = curCtx->func;
+    if (!fn->hasAttr(FuncHasTempVar)) {
+        fn->addAttr(FuncHasTempVar);
+        auto var = newNode<Variable>(NodeVar, &tempVarTok);
+        var->type = &boolTy;
+        var->next = fn->locals;
+        fn->locals = var;
+        fn->n_locals++;
+    }
+}
+
+Node * Parser::parseAnyAll(Token *tok, Token **rest, NodeId id) {
+    auto node = newNode<Any>(id, tok);
+    addTempLocalVar();
+    tok = skip(tok->next, TokenIdLBracket, '[');
+    Node head{};
+    Node *cur = &head;
+    while (tok->id != TokenIdEof) {
+        cur = cur->next = parseExpr(tok, &tok);
+        tok = tok->next;
+        if (tok->id == TokenIdRBracket) {
+            *rest = tok;
+            break;
+        }
+    }
+    node->cases = head.next;
     return node;
 }
 
@@ -1190,7 +1222,7 @@ Node * Parser::parseThrow(Token *tok, Token **rest) {
     if (!curCtx->func->isThrowable()) {
         // add a hidden param for exception handling
         auto fn = curCtx->func;
-        auto param = addVar(curCtx, &hiddenParamTok);
+        auto param = newNode<Variable>(NodeVar, &hiddenParamTok);
         param->type = &uintPtrTy;
         param->next = fn->params;
         fn->params = param;

@@ -22,18 +22,19 @@ namespace llvm {
 typedef llvm::Value IrValue;
 
 enum FuncAttr {
-    FuncStdcall  = 0x0001,
-    FuncCdecl    = 0x0002,
-    FuncCallConv = 0x0003,
-    FuncInfix    = 0x0004,
-    FuncCallback = 0x0008,
-    FuncVariadic = 0x0010,
-    FuncTyped    = 0x0020,
-    FuncCustom   = 0x0040,
-    FuncCatch    = 0x0080,
-    FuncInline   = 0x0100,
-    FuncExtern   = 0x0200,
-    FuncThrow    = 0x0400,
+    FuncStdcall      = 0x0001,
+    FuncCdecl        = 0x0002,
+    FuncCallConv     = 0x0003,
+    FuncInfix        = 0x0004,
+    FuncCallback     = 0x0008,
+    FuncVariadic     = 0x0010,
+    FuncTyped        = 0x0020,
+    FuncCustom       = 0x0040,
+    FuncCatch        = 0x0080,
+    FuncInline       = 0x0100,
+    FuncExtern       = 0x0200,
+    FuncThrow        = 0x0400,
+    FuncHasTempVar   = 0x0800,
 
     FuncAttrEnd,
     LLVM_MARK_AS_BITMASK_ENUM(/* LargestValue = */ FuncAttrEnd)
@@ -100,6 +101,8 @@ struct Function : Type {
     uint32_t n_locals;
     Node *params;
     Node *locals;
+    Node *temp_locals;
+
     const Type *return_type;
     Token *spec;
     union {
@@ -117,6 +120,8 @@ struct Function : Type {
         using namespace llvm;
         attrs |= attr;
     }
+
+    bool hasAttr(FuncAttr attr) {return static_cast<bool>(attrs & attr);}
 };
 
 struct Variable : Node {
@@ -211,6 +216,10 @@ struct Case : Node {
     Either *cases;
 };
 
+struct Any : Node {
+    Node *cases;
+};
+
 struct Context : Node {
     HashMap decls;             // for struct, enum, function, alias, context, variable
     Function *func; 
@@ -235,8 +244,10 @@ private:
 
     SmallVector<std::tuple<Function*, FnCall*, bool>> unresolvedCalls;
     Token hiddenParamTok;
+    Token tempVarTok;
     Type uintPtrTy;
     Type uintTy;
+    Type boolTy;
     NodeBuffer nodeBuf;
 
     Logger LOG;
@@ -245,7 +256,11 @@ public:
     Parser(Compilation &c, CodeGen &_codegen) : Utils(c), codegen(_codegen), curTypeId(1000) {
         hiddenParamTok.id = TokenIdWord;
         hiddenParamTok.loc = "__r/s_throw_";
-        hiddenParamTok.len = 12;
+        hiddenParamTok.len = std::char_traits<char>::length(hiddenParamTok.loc);
+        tempVarTok.id = TokenIdWord;
+        tempVarTok.loc = "__r/s_temp_";
+        tempVarTok.len = std::char_traits<char>::length(tempVarTok.loc);
+        boolTy = Type{TypeBool, false, 1, 1, nullptr, nullptr, TypeBool};
         uintTy = Type{TypeInt, false, 4, 4, nullptr, nullptr, TypeInt};
         uintPtrTy.id = TypePtr;
         uintPtrTy.data.type = &uintTy;
@@ -275,6 +290,9 @@ private:
     }
 
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
+    Node * parseAnyAll(Token *tok, Token **rest, NodeId id);
+    Node * parseAll(Token *tok, Token **rest) {return parseAnyAll(tok, rest, NodeAll);}
+    Node * parseAny(Token *tok, Token **rest) {return parseAnyAll(tok, rest, NodeAny);}
     Node * parseCase(Token *tok, Token **rest);
     Node * parseSwitch(Token *tok, Token **rest);
     Node * parseLoop(Token *tok, Token **rest);
@@ -312,6 +330,8 @@ private:
     void resolveDeclarations(Context *ctx);
 
     Variable *newVar(Token *tok, bool is_global = false);
+
+    void addTempLocalVar();
 
     Context *newContext(Token *main_tok) {
         Context *c = new (nodeBuf.alloc(sizeof(Context))) Context;

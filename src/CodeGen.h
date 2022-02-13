@@ -50,6 +50,8 @@ public:
     llvm::Value * getPointer(Node *node);
 
     llvm::Value * emitCode(Node *node);
+    llvm::Value * emitAll(Any *node);
+    llvm::Value * emitAny(Any *node);
     llvm::Value * emitCase(Case *node);
     llvm::Value * emitSwitch(Switch *node);
     llvm::Value * emitEither(Either *node);

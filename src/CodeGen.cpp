@@ -296,29 +296,79 @@ llvm::Value * CodeGen::emitBinOp(Node *node) {
     llvm::Value *result = nullptr; 
     switch (node->id)
     {
-    case NodeAdd:        result = builder->CreateNSWAdd(left, right); break;
-    case NodeSub:        result = builder->CreateNSWSub(left, right); break;
-    case NodeMul:        result = builder->CreateNSWMul(left, right); break;
-    case NodeDiv:        result = builder->CreateSDiv(left, right); break;
-    case NodeRemainder:  result = builder->CreateSRem(left, right); break;
-    //case NodeModulo:     result = builder->Create(left, right); break;
-    case NodeEq:         result = builder->CreateICmpEQ(left, right); break;
-    case NodeNotEq:      result = builder->CreateICmpNE(left, right); break;
-    case NodeLess:       result = builder->CreateICmpSLT(left, right); break;
-    case NodeLessEq:     result = builder->CreateICmpSLE(left, right); break;
-    case NodeGreater:    result = builder->CreateICmpSGT(left, right); break;
-    case NodeGreaterEq:  result = builder->CreateICmpSGE(left, right); break;
-    case NodeAnd:        result = builder->CreateAnd(left, right); break;
-    case NodeOr:         result = builder->CreateOr(left, right); break;
-    case NodeXor:        result = builder->CreateXor(left, right); break;
-    case NodeShiftLeft:  result = builder->CreateShl(left, right); break;
-    case NodeShiftRight: result = builder->CreateAShr(left, right); break;
-    case NodeShiftRightLogical: result = builder->CreateLShr(left, right); break;
+    case NodeAdd:        return builder->CreateNSWAdd(left, right);
+    case NodeSub:        return builder->CreateNSWSub(left, right);
+    case NodeMul:        return builder->CreateNSWMul(left, right);
+    case NodeDiv:        return builder->CreateSDiv(left, right);
+    case NodeRemainder:  return builder->CreateSRem(left, right);
+    // case NodeModulo:     return builder->Create(left, right);
+    case NodeEq:         return builder->CreateICmpEQ(left, right);
+    case NodeNotEq:      return builder->CreateICmpNE(left, right);
+    case NodeLess:       return builder->CreateICmpSLT(left, right);
+    case NodeLessEq:     return builder->CreateICmpSLE(left, right);
+    case NodeGreater:    return builder->CreateICmpSGT(left, right);
+    case NodeGreaterEq:  return builder->CreateICmpSGE(left, right);
+    case NodeAnd:        return builder->CreateAnd(left, right);
+    case NodeOr:         return builder->CreateOr(left, right);
+    case NodeXor:        return builder->CreateXor(left, right);
+    case NodeShiftLeft:  return builder->CreateShl(left, right);
+    case NodeShiftRight: return builder->CreateAShr(left, right);
+    case NodeShiftRightLogical: return builder->CreateLShr(left, right);
     default:
         assert(false);
         break;
     }
-    return result;
+    llvm_unreachable("emitBinOp");
+}
+
+llvm::Value * CodeGen::emitAll(Any *node) {
+    Node *cond = node->cases;
+    llvm::SmallVector<llvm::Value *> conds;
+    auto after_all = createBasicBlock("after.all");
+    llvm::Value *llvm_cond;
+    while (cond) {
+        auto if_then = createBasicBlock("if.then");
+        auto if_else = createBasicBlock("if.else");
+
+        llvm_cond = emitExpr(cond);
+        builder->CreateCondBr(llvm_cond, if_then, if_else);
+
+        setCurrentBasicBlock(if_else);
+        builder->CreateStore(llvm_cond, firstLocalVar);
+        builder->CreateBr(after_all);
+
+        setCurrentBasicBlock(if_then);
+        cond = cond->next;
+    }
+    builder->CreateStore(llvm_cond, firstLocalVar);
+    builder->CreateBr(after_all);
+    setCurrentBasicBlock(after_all);
+    return builder->CreateLoad(firstLocalVar);
+}
+
+llvm::Value * CodeGen::emitAny(Any *node) {
+    Node *cond = node->cases;
+    llvm::SmallVector<llvm::Value *> conds;
+    auto after_any = createBasicBlock("after.any");
+    llvm::Value *llvm_cond;
+    while (cond) {
+        auto if_then = createBasicBlock("if.then");
+        auto if_else = createBasicBlock("if.else");
+
+        llvm_cond = emitExpr(cond);
+        builder->CreateCondBr(llvm_cond, if_then, if_else);
+
+        setCurrentBasicBlock(if_then);
+        builder->CreateStore(llvm_cond, firstLocalVar);
+        builder->CreateBr(after_any);
+
+        setCurrentBasicBlock(if_else);
+        cond = cond->next;
+    }
+    builder->CreateStore(llvm_cond, firstLocalVar);
+    builder->CreateBr(after_any);
+    setCurrentBasicBlock(after_any);
+    return builder->CreateLoad(firstLocalVar);
 }
 
 llvm::Value * CodeGen::emitExpr(Node *node) {
@@ -329,6 +379,8 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     {
     case NodeEither: val = emitEither((Either *)node); break;
     case NodeSwitch: val = emitSwitch((Switch *)node); break;
+    case NodeAny:    val = emitAny((Any *)node); break;
+    case NodeAll:    val = emitAll((Any *)node); break;
     case NodeCase:   val = emitCase((Case *)node); break;
     case NodeFnCall: val = emitCall((FnCall *)node); break;
     case NodeVar:    val = readVariable((Variable *)node); break;
@@ -492,9 +544,9 @@ void CodeGen::emitFunc(Function *fn) {
     }
     // allocate local variables on stack
     alloca_on_stack(fn->locals);
+    if (fn->hasAttr(FuncHasTempVar)) firstLocalVar = ((Variable *)fn->locals)->ir;
     if (in_main_func && fn->isThrowable()) {
         afterCatchBB = createBasicBlock("after.catch");
-        firstLocalVar = ((Variable *)fn->locals)->ir;
     }
 
     emitCode(fn->body.node);

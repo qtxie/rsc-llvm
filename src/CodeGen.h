@@ -29,8 +29,10 @@ private:
     llvm::BasicBlock *continueBB;
     llvm::BasicBlock *breakBB;
     bool inLoop;
+    bool inAssign;
     bool in_catch;
     bool in_main_func;
+    llvm::Value *resultVar;
     llvm::Value *firstLocalVar;
     llvm::Value *loopCounter;
     llvm::Value *tempVarBool;
@@ -90,8 +92,15 @@ private:
     void mangleName(Token *tok, Context *ctx, std::string &result);
 
     llvm::ConstantInt * getConstantInt(Node *node) {
-        return llvm::ConstantInt::get(i32_ty, ((Type *)node)->data.value);
+        llvm::IntegerType *ty = node->id == TypeByte ? byte_ty : i32_ty;
+        return llvm::ConstantInt::get(ty, ((Type *)node)->data.value, node->is_signed);
     }
+
+    llvm::Constant * getConstantFloat(Node *node) {
+        return llvm::ConstantFP::get(f64_ty, ((Type *)node)->data.fvalue);
+    }
+
+    llvm::Constant * createCString(Node *node);
 
     llvm::BasicBlock * createBasicBlock(const llvm::Twine &name = "", llvm::BasicBlock *insertBefore = nullptr) {
         return llvm::BasicBlock::Create(Ctx, name, curFunc, insertBefore);

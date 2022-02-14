@@ -73,6 +73,7 @@ typedef NodeId TypeId;
 struct Type : Node {
     uint32_t  tid;     // unique id
     union {
+        char chr;
         double fvalue;
         int64_t value;
         const Type *type;
@@ -284,7 +285,9 @@ private:
         curCtx->func->attrs |= attr;
     }
 
+    char scanByte(const char **bp);
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
+    Node * parseByte(Token *tok);
     Node * parseAnyAll(Token *tok, Token **rest, NodeId id);
     Node * parseAll(Token *tok, Token **rest) {return parseAnyAll(tok, rest, NodeAll);}
     Node * parseAny(Token *tok, Token **rest) {return parseAnyAll(tok, rest, NodeAny);}
@@ -323,8 +326,6 @@ private:
 
     bool resolveStruct(Type *ty, Context *ctx);
     void resolveDeclarations(Context *ctx);
-
-    Variable *newVar(Token *tok, bool is_global = false);
 
     Context *newContext(Token *main_tok) {
         Context *c = new (nodeBuf.alloc(sizeof(Context))) Context;

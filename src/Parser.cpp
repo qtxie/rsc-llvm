@@ -5,6 +5,7 @@
  * https://github.com/red/red/blob/master/BSD-3-License.txt
 */
 
+#include "LexMap.h"
 #include "Parser.h"
 #include "CodeGen.h"
 #include "Compilation.h"
@@ -551,6 +552,7 @@ const Type * Parser::addVarType(Node *node) {
     else if (node->id < TypeType) return (Type *)node;
     else if (node->id == NodeFnCall) return ((FnCall*)node)->fn->return_type;
     else if (node->id == NodeVar) return ((Variable*)node)->type;
+    else if (node->id == NodeEither) return nullptr;
     else comp.error(node->tok, err_expected, "expression");
 }
 
@@ -970,6 +972,99 @@ Node * Parser::parseBinaryOp(Node *lhs, Token *tok, Token **rest) {
     return node ? node : lhs;
 }
 
+char Parser::scanByte(const char **bp) {
+    static const llvm::ArrayRef<std::pair<const StringLiteral, char>> Esc_Names = {
+        {"line",   10},
+        {"tab",    9},
+        {"page",   12},
+        {"escape", 27},
+        {"esc",    27},
+        {"back",   8},
+        {"del",    127},
+        {"null",   0}
+    };
+    
+    auto c = **bp;
+	(*bp)++;
+	if (c != '^') return c;
+
+	// Must be ^ escaped char:
+	c = **bp;
+	(*bp)++;
+
+    char n;
+    char lex;
+    const char *cp;
+    switch (c) {
+
+	case 0:
+		n = 0;
+		break;
+
+	case '/':
+		n = '\n';
+		break;
+
+	case '^':
+		n = c;
+		break;
+
+    case '-':
+		n = '\t';
+		break;
+
+	case '!':
+		n = '\036'; // record separator
+		break;
+
+	case '(':	// ^(tab) ^(1234)
+		// Check for hex integers ^(1234):
+		cp = *bp; // restart location
+		n = 0;
+		while ((lex = Lex_Map[*cp]) > LEX_WORD) {
+			c = lex & LEX_VALUE;
+			if (!c && lex < LEX_NUMBER) break;
+			n = (n << 4) + c;
+			cp++;
+		}
+		if ((cp - *bp) > 4) return -1;
+		if (*cp == ')') {
+			cp++;
+			*bp = cp;
+			return n;
+		}
+
+		// Check for identifiers:
+		for (auto &[name, val] : Esc_Names) {
+            if (0 == name.compare_insensitive(StringRef(*bp, name.size()))) {
+                *bp += name.size();
+                if (**bp == ')') {
+                    (*bp)++;
+                    return val;
+                }
+            }
+		}
+		return -1;
+
+    default:
+		n = toupper(c);
+		if (n >= '@' && n <= '_') n -= '@';
+		else if (n == '~') n = 0x7f; // special for DEL
+		else n = c;  // includes: ^{ ^} ^"
+    }
+
+	return n;
+}
+
+Node * Parser::parseByte(Token *tok) {
+    auto p = &(tok->loc);
+    auto chr = scanByte(p);
+    if (chr == -1) comp.error(tok, err_invalid_token);
+    auto ty = newNode<Type>(TypeByte, tok);
+    ty->data.chr = chr;
+    return ty;
+}
+
 Node * Parser::parseExpr(Token *tok, Token **rest) {
     Context *ctx = nullptr;
     Node *node = nullptr;
@@ -1018,6 +1113,9 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
             node = ty;
             if (tok->toDouble(ty->data.fvalue))
                 comp.error(tok, err_float_overflow);
+            break;
+        case TokenIdByte:
+            node = parseByte(tok);
             break;
         case TokenIdString:
             ty = newNode<Type>(TypeCStr, tok);

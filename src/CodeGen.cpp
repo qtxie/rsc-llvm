@@ -46,6 +46,7 @@ CodeGen::CodeGen(Compilation &c) : comp(c) {
     bool_ty = llvm::Type::getInt1Ty(Ctx);
     byte_ty = llvm::Type::getInt8Ty(Ctx);
     inLoop = false;
+    inAssign = false;
     in_catch = false;
     in_main_func = false;
     firstLocalVar = nullptr;
@@ -110,17 +111,21 @@ llvm::Value * CodeGen::emitEither(Either *node) {
     builder->CreateCondBr(cond, if_then, if_else);
 
     setCurrentBasicBlock(if_then);
-    emitCode(node->then_body);
+    auto val = emitCode(node->then_body);
+    if (inAssign) builder->CreateStore(val, resultVar);
     if (!curBB->getTerminator())
         builder->CreateBr(after_if);
 
     setCurrentBasicBlock(if_else);
-    if (node->else_body) emitCode(node->else_body);
+    if (node->else_body) {
+        val = emitCode(node->else_body);
+        if (inAssign) builder->CreateStore(val, resultVar);
+    }
     if (!curBB->getTerminator())
         builder->CreateBr(after_if);
 
     setCurrentBasicBlock(after_if);
-    return nullptr;
+    return inAssign ? builder->CreateLoad(resultVar) : nullptr;
 }
 
 void CodeGen::emitIf(If *node) {
@@ -171,7 +176,7 @@ void CodeGen::emitLoop(Loop *node) {
     builder->CreateCondBr(cond, after_loop, loop_body);
 
     setCurrentBasicBlock(loop_body);
-    auto new_val = builder->CreateNUWSub(builder->CreateLoad(counter), builder->getInt32(1));
+    auto new_val = builder->CreateSub(builder->CreateLoad(counter), builder->getInt32(1));
     builder->CreateStore(new_val, counter);
 
     continueBB = loop_cond;
@@ -373,6 +378,10 @@ llvm::Value * CodeGen::emitAny(Any *node) {
     return builder->CreateLoad(tempVarBool);
 }
 
+inline llvm::Constant * CodeGen::createCString(Node *node) {
+    return builder->CreateGlobalStringPtr(node->tok->str(), "", 0, M);
+}
+
 llvm::Value * CodeGen::emitExpr(Node *node) {
     LOG << NodeName[node->id] << '\n';
 
@@ -389,7 +398,9 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     case NodeIdent:  val = readVariable(((Identifier *)node)->var); break;
     case NodePtr:    val = getPointer(((Pointer *)node)->value); break;
     case TypeInt:    val = getConstantInt(node); break;
-    case TypeCStr:   val = builder->CreateGlobalStringPtr(node->tok->str(), "", 0, M); break;
+    case TypeByte:   val = getConstantInt(node); break;
+    case TypeDouble: val = getConstantFloat(node); break;
+    case TypeCStr:   val = createCString(node); break;
     default:         val = emitBinOp(node); break;
     }
     curVal = val;
@@ -397,7 +408,11 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
 }
 
 llvm::Value * CodeGen::emitAssignment(Assignment *node) {
+    auto in_assign = inAssign;
+    inAssign = true;
     Variable *left = (Variable *)node->lhs;
+    resultVar = left->ir;
+
     LOG() << left->tok->str() << left->ir << '\n';
     llvm::Value *val = nullptr;
     if (node->rhs->id == NodeAssign) {
@@ -413,6 +428,7 @@ llvm::Value * CodeGen::emitAssignment(Assignment *node) {
         if (llvm::isa<llvm::Constant>(val))
             var->setInitializer(llvm::cast<llvm::Constant>(val));
     }
+    inAssign = in_assign;
     return val;
 }
 
@@ -665,6 +681,8 @@ void CodeGen::output() {
 }
 
 void CodeGen::emit(Context *ctx) {
+    // for Windows only
+    new llvm::GlobalVariable(*M, i32_ty, false, GlobalValue::ExternalLinkage, llvm::ConstantInt::get(i32_ty, 1), "_fltused");
     createFunctions(ctx);
     emitMainFunc(ctx->func);
     emitFunctions(ctx);

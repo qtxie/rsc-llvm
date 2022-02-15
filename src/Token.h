@@ -18,11 +18,14 @@ enum TokenId : uint8_t {
     TokenIdCount
 };
 
+#define TkFlagEscapedString  1
+
 typedef SmallVector<StringRef> Hideset;
 
 struct Token {
     TokenId id;         // Token ID
     TokenId sub_id;     // e.g Multiline String
+    uint8_t flags;
     int len;            // Token length
     const char *loc;    // Token location
     Token *next;        // Next Token

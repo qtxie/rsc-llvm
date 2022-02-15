@@ -139,12 +139,55 @@ int Tokenizer::scanByte(const char *p) {
     }
 }
 
-int Tokenizer::scanMultilineString(const char *p) {
-    const char * start = p;
-    if (p = strchr(p, '}'); p)
-        return p - start;
-    else
-        tokenError(p, err_invalid_token);
+int Tokenizer::scanQuotedString(const char *p, uint8_t *flag) {
+    const char *src = p;
+    int nest = 0;
+	uint32_t chr;
+
+	char term = (*src++ == '{') ? '}' : '"';	// pick termination
+
+	while (*src != term || nest > 0) {
+
+		chr = *src;
+
+        switch (chr) {
+
+		case 0:
+			return -1;
+        
+		case '^':
+            *flag = TkFlagEscapedString;
+            break;
+
+		case '{':
+			if (term != '"') nest++;
+			break;
+
+		case '}':
+			if (term != '"' && nest > 0) nest--;
+			break;
+
+		case '\r':
+			if (src[1] == '\n') src++;
+			// fall thru
+        case '\n':
+			if (term == '"') return -1;
+			break;
+
+		default:
+			if (chr >= 0x80) {
+                const char *q;
+				chr = decodeUtf8(src, &q); // zero on error
+				if (chr == 0) return -1;
+                src = q;
+                continue;
+			}
+		}
+
+		src++;
+    }
+
+	return src - p - 1;
 }
 
 int Tokenizer::scanString(const char *p) {
@@ -351,17 +394,23 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
             continue;
 
         case '"': {
-            p++;    // Skip beginning "
-            int len = scanString(p);
+            uint8_t flag = 0;
+            int len = scanQuotedString(p, &flag);
+            if (len == -1) tokenError(p, err_invalid_token);
+            p++;
             ADD_TOK(TokenIdString, p, len);
+            cur->flags |= flag;
             p++;    // Skip ending "
             }
             continue;
 
         case '{': {
+            uint8_t flag = 0;
+            int len = scanQuotedString(p, &flag);
+            if (len == -1) tokenError(p, err_invalid_token);
             p++;
-            int len = scanMultilineString(p);
             ADD_TOK(TokenIdString, p, len);
+            cur->flags |= flag;
             cur->sub_id = TokenIdMultilineString;
             p++;
             }

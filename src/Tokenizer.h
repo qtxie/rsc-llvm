@@ -33,7 +33,7 @@ private:
     int scanSymbol(const char *p);
     int scanFile(const char *p);
     int scanString(const char *p);
-    int scanMultilineString(const char *p);
+    int scanQuotedString(const char *p, uint8_t *flag);
     int scanBinary(const char *p);
     int scanByte(const char *p);
 

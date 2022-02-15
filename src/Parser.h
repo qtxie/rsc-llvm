@@ -80,6 +80,7 @@ struct Type : Node {
         Node *member;
         Token *st_body; // struct body
         Token *import_lib;
+        std::string *str;
     } data;
 };
 
@@ -288,6 +289,7 @@ private:
     char scanByte(const char **bp);
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
     Node * parseByte(Token *tok);
+    Node * parseString(Token *tok);
     Node * parseAnyAll(Token *tok, Token **rest, NodeId id);
     Node * parseAll(Token *tok, Token **rest) {return parseAnyAll(tok, rest, NodeAll);}
     Node * parseAny(Token *tok, Token **rest) {return parseAnyAll(tok, rest, NodeAny);}

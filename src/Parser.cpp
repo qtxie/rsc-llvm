@@ -973,7 +973,7 @@ Node * Parser::parseBinaryOp(Node *lhs, Token *tok, Token **rest) {
 }
 
 char Parser::scanByte(const char **bp) {
-    static const llvm::ArrayRef<std::pair<const StringLiteral, char>> Esc_Names = {
+    static constexpr std::array<std::pair<const StringLiteral, char>, 8> Esc_Names = {{
         {"line",   10},
         {"tab",    9},
         {"page",   12},
@@ -982,7 +982,7 @@ char Parser::scanByte(const char **bp) {
         {"back",   8},
         {"del",    127},
         {"null",   0}
-    };
+    }};
     
     auto c = **bp;
 	(*bp)++;
@@ -1065,6 +1065,33 @@ Node * Parser::parseByte(Token *tok) {
     return ty;
 }
 
+Node * Parser::parseString(Token *tok) {
+    auto ty = newNode<Type>(TypeCStr, tok);
+    if (tok->flags & TkFlagEscapedString) {
+        const char *src = tok->loc;
+        int len = tok->len;
+        int n = 0;
+        int chr;
+        const char *end = src + len;
+        auto dst = new char[len];
+
+        while (src < end) {
+            chr = *src;
+            if (chr == '^') {
+                chr = scanByte(&src);
+                if (chr == -1) comp.error(src, err_invalid_token);
+                src--;
+            }
+            dst[n] = chr;
+            n++;
+            src++;
+        }
+        tok->loc = dst;
+        tok->len = n;
+    }
+    return ty;
+}
+
 Node * Parser::parseExpr(Token *tok, Token **rest) {
     Context *ctx = nullptr;
     Node *node = nullptr;
@@ -1118,8 +1145,7 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
             node = parseByte(tok);
             break;
         case TokenIdString:
-            ty = newNode<Type>(TypeCStr, tok);
-            node = ty;
+            node = parseString(tok);
             break;
         case TokenIdLParen:
             node = parseExpr(tok->next, &tok);

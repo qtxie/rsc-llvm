@@ -1209,13 +1209,14 @@ Node * Parser::parseCase(Token *tok, Token **rest) {
     auto node = newNode<Case>(NodeCase, tok);
 
     tok = skip(tok->next, TokenIdLBracket, '[');
+    Either *last_node = nullptr;
     while (tok->id != TokenIdEof) {
         if (tok->id == TokenIdTrue) {   // catch-all rule
             auto true_case = parseCode(tok->next, &tok, curCtx);
             *rest = tok->next;
             expect(*rest, TokenIdRBracket, ']');
-            if (node->cases) {
-                node->cases->else_body = true_case;
+            if (last_node) {
+                last_node->else_body = true_case;
                 return node;
             } else {
                 return true_case;
@@ -1223,16 +1224,16 @@ Node * Parser::parseCase(Token *tok, Token **rest) {
         }
 
         auto case_node = newNode<Either>(NodeEither, tok);
-        if (node->cases)
-            node->cases->else_body = case_node;
-        else
-            node->cases = case_node;
-
         case_node->cond = parseExpr(tok, &tok);
 
         tok = tok->next;
         expect(tok, TokenIdLBracket, '[');
         case_node->then_body = parseCode(tok, &tok, curCtx);
+
+        if (!node->cases) node->cases = case_node;
+
+        if (last_node) last_node->else_body = case_node;
+        last_node = case_node;
 
         tok = tok->next;
         if (tok->id == TokenIdRBracket) {

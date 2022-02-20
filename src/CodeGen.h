@@ -55,6 +55,7 @@ public:
     llvm::Value * getPointer(Node *node);
 
     llvm::Value * emitCode(Node *node);
+    llvm::Value * emitCast(Cast *node);
     llvm::Value * emitAll(Any *node);
     llvm::Value * emitAny(Any *node);
     llvm::Value * emitCase(Case *node);
@@ -109,7 +110,7 @@ private:
         curBB = bb;
         builder->SetInsertPoint(bb);
     }
-    llvm::FunctionType * createFuncType(Function *fn);
+    llvm::FunctionType * createFuncType(FuncType *fn);
     llvm::Type * llvmType(const Node *ty);
 
     template <typename... Args>

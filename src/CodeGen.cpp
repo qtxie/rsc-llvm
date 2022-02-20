@@ -34,6 +34,15 @@ static const char * const TypeName[] {
     nullptr
 };
 
+static int getCallingConv(FuncAttr attr) {
+    if (attr & FuncStdcall)
+        return llvm::CallingConv::X86_StdCall;
+    else if (attr & FuncVariadic || attr & FuncCdecl)
+        return llvm::CallingConv::C;
+    else
+        return llvm::CallingConv::Fast;
+}
+
 CodeGen::CodeGen(Compilation &c) : comp(c) {
     M = new llvm::Module(c.mainFile, Ctx);
     M->setTargetTriple(c.TM->getTargetTriple().getTriple());
@@ -58,8 +67,13 @@ llvm::Value * CodeGen::readVariable(Variable *var) {
 }
 
 llvm::Value * CodeGen::getPointer(Node *node) {
-    Variable *var = (Variable *)node;
-    return var->ir;
+    if (node->id == NodeVar) {
+        Variable *var = (Variable *)node;
+        return var->ir;
+    } else if (node->id == TypeFunc) {
+        return ((Function *)node)->ir;
+    }
+    llvm_unreachable("");
 }
 
 llvm::GlobalVariable * CodeGen::emitGlobalVar(Variable *var) {
@@ -273,8 +287,18 @@ void CodeGen::handleThrow() {
 }
 
 llvm::Value * CodeGen::emitCall(FnCall *call) {
-    LOG() << call->fn->tok->str() << '\n';
-    llvm::Function *func = llvm::cast<llvm::Function>(call->fn->ir);
+    auto fn = call->fn;
+    LOG() << NodeName[fn->id] << '\n';
+    llvm::Value *fn_ir;
+    FuncType *fn_ty;
+    if (fn->id == TypeFunc) {
+        fn_ty = fn->type;
+        fn_ir = fn->ir;
+    } else {
+        auto var = (Variable *)fn;
+        fn_ty = (FuncType *)var->type;
+        fn_ir = builder->CreateLoad(var->ir);
+    }
 
     // process arguments
     llvm::SmallVector<llvm::Value *> argv;
@@ -285,8 +309,8 @@ llvm::Value * CodeGen::emitCall(FnCall *call) {
     }
 
     LOG() << call->tok->str() << " " << argv.size() << "\n";
-    auto call_inst = builder->CreateCall(func->getFunctionType(), func, argv);
-    call_inst->setCallingConv(func->getCallingConv());
+    auto call_inst = builder->CreateCall(fn_ty->ir, fn_ir, argv);
+    call_inst->setCallingConv(getCallingConv(fn_ty->attrs));
 
     if (call->fn->isThrowable()) handleThrow();
     return call_inst;
@@ -379,11 +403,17 @@ llvm::Value * CodeGen::emitAny(Any *node) {
 }
 
 inline llvm::Constant * CodeGen::createCString(Node *node) {
-    return builder->CreateGlobalStringPtr(node->tok->str(), "", 0, M);
+    const char *data = ((Type *)node)->data.str;
+    return builder->CreateGlobalStringPtr(StringRef(data, node->tok->len), "", 0, M);
+}
+
+llvm::Value * CodeGen::emitCast(Cast *node) {
+    auto val = emitExpr(node->expr);
+    return builder->CreateFPCast(val, llvmType(node->type));
 }
 
 llvm::Value * CodeGen::emitExpr(Node *node) {
-    LOG << NodeName[node->id] << '\n';
+    LOG() << NodeName[node->id] << '\n';
 
     llvm::Value *val = nullptr;
     switch (node->id)
@@ -393,6 +423,7 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     case NodeAny:    val = emitAny((Any *)node); break;
     case NodeAll:    val = emitAll((Any *)node); break;
     case NodeCase:   val = emitCase((Case *)node); break;
+    case NodeCast:   val = emitCast((Cast *)node); break;
     case NodeFnCall: val = emitCall((FnCall *)node); break;
     case NodeVar:    val = readVariable((Variable *)node); break;
     case NodeIdent:  val = readVariable(((Identifier *)node)->var); break;
@@ -475,7 +506,8 @@ llvm::Value * CodeGen::emitCode(Node *node) {
     return val;
 }
 
-llvm::FunctionType * CodeGen::createFuncType(Function *fn) {
+llvm::FunctionType * CodeGen::createFuncType(FuncType *fn) {
+    LOG() << fn->tok->str() << '\n';
     auto result_ty = llvm::Type::getVoidTy(Ctx);
     if (fn->return_type)
         result_ty = llvmType(fn->return_type);
@@ -486,8 +518,9 @@ llvm::FunctionType * CodeGen::createFuncType(Function *fn) {
         params_ty.push_back(llvmType(params));
         params = params->next;
     }
-            LOG() << fn->tok->str() << " " << params_ty.size() << "\n";
-    return llvm::FunctionType::get(result_ty, params_ty, fn->attrs & FuncVariadic);
+
+    fn->ir = llvm::FunctionType::get(result_ty, params_ty, fn->attrs & FuncVariadic);
+    return fn->ir;
 }
 
 
@@ -501,7 +534,7 @@ void CodeGen::mangleName(Token *tok, Context *ctx, std::string &result) {
 }
 
 llvm::Value * CodeGen::createFunc(Function *fn, Context *ctx) {
-    auto func_ty = createFuncType(fn);
+    auto func_ty = createFuncType(fn->type);
     std::string name;
     mangleName(fn->import_name, ctx, name);
     auto linkage = fn->isExtern() ? GlobalValue::ExternalLinkage : GlobalValue::InternalLinkage;
@@ -509,16 +542,10 @@ llvm::Value * CodeGen::createFunc(Function *fn, Context *ctx) {
     //func->addFnAttr(llvm::Attribute::NoBuiltin);
     fn->ir = func;
 
-    if (auto lib = fn->data.import_lib) import_libs.insert(lib->str());
+    if (auto lib = fn->import_lib) import_libs.insert(lib->str());
 
     // process attributes
-    auto attrs = fn->attrs;
-    if (attrs & FuncStdcall)
-        func->setCallingConv(llvm::CallingConv::X86_StdCall);
-    else if (attrs & FuncVariadic || attrs & FuncCdecl)
-        func->setCallingConv(llvm::CallingConv::C);
-    else
-        func->setCallingConv(llvm::CallingConv::Fast);
+    func->setCallingConv(getCallingConv(fn->type->attrs));
 
     return func;
 }
@@ -535,7 +562,7 @@ void CodeGen::createFunctions(Context *ctx) {
 }
 
 void CodeGen::emitFunc(Function *fn) {
-    if (fn->data.import_lib) return;
+    if (fn->import_lib) return;
 
     llvm::Function *func = llvm::cast<llvm::Function>(fn->ir);
     curFunc = func;
@@ -554,8 +581,8 @@ void CodeGen::emitFunc(Function *fn) {
     };
 
     // allocate args on stack
-    alloca_on_stack(fn->params);
-    Variable *var = (Variable *)fn->params;
+    alloca_on_stack(fn->type->params);
+    Variable *var = (Variable *)fn->type->params;
     for (auto &arg : func->args()) {
         builder->CreateStore(&arg, var->ir);
         var = (Variable *)var->next;
@@ -572,7 +599,7 @@ void CodeGen::emitFunc(Function *fn) {
 
     emitCode(fn->body.node);
     if (!curBB->getTerminator()) {
-        if (fn->return_type)
+        if (fn->type->return_type)
             builder->CreateRet(curVal);
         else
             builder->CreateRetVoid();
@@ -693,6 +720,7 @@ llvm::Type * CodeGen::llvmType(const Node *node) {
     const Type *ty = (const Type *)node;
     if (node->id == NodeVar)
         ty = ((const Variable *)node)->type;
+
     switch (ty->id)
     {
     case TypeInt:    return i32_ty;
@@ -703,12 +731,17 @@ llvm::Type * CodeGen::llvmType(const Node *node) {
     case TypePtr:    return llvmType(ty->data.type)->getPointerTo();
     case TypeCStr:   return byte_ty->getPointerTo();
     //case TypeArray:  return llvm::ArrayType::get(byte_ty, ty->tok->len);
-    case TypeFunc: break; 
+    case TypeFuncTy: {
+        auto ftype = (FuncType *)ty;
+        llvm::Type *t = ftype->ir ? ftype->ir : createFuncType(ftype);
+        return t->getPointerTo();
+    }
     case TypeVoid:
             error(node, err_not_initialized, node->tok->str());
     default:
         break;
     }
+    llvm_unreachable("");
     return nullptr;
 }
 

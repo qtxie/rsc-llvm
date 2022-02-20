@@ -21,10 +21,12 @@ TYPE(Func,               "function!")
 TYPE(CStr,               "c-string!")
 TYPE(Binary,             "binary!")
 TYPE(Array,              "array!")
+TYPE(Type,               "anytype!")
 TYPE(Alias,              "alias!")
+TYPE(FuncTy,             "func-spec")
 TYPE(FuncUnresolved,     "unresolved-func")
 TYPE(StructUnresolved,   "unresolved-struct")
-TYPE(Type,               "anytype!")
+TYPE(End,                "type-end")
 
 NODE(Assign,             "assignment")
 NODE(FnCall,             "func-call")
@@ -67,6 +69,7 @@ NODE(Case,               "case")
 NODE(While,              "while")
 NODE(Until,              "until")
 NODE(Loop,               "loop")
+NODE(Cast,               "cast")
 
 #undef TYPE
 #undef NODE

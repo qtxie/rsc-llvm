@@ -11,7 +11,9 @@
 #include "Logger.h"
 #include "Utils.h"
 #include "StringMap.h"
+#include <set>
 #include <llvm/ADT/BitmaskEnum.h>
+#include <llvm/IR/DerivedTypes.h>
 
 using llvm::StringMap;
 
@@ -79,8 +81,7 @@ struct Type : Node {
         const Type *type;
         Node *member;
         Token *st_body; // struct body
-        Token *import_lib;
-        std::string *str;
+        const char *str;
     } data;
 };
 
@@ -98,33 +99,49 @@ struct Member : Type {
 
 struct FnCall;
 
-struct Function : Type {
-    Token *import_name;
+struct FuncType : Type {
     uint32_t n_params;
-    uint32_t n_locals;
     Node *params;
-    Node *locals;
-    Node *temp_locals;
-
     const Type *return_type;
-    Token *spec;
-    union {
-        Token *token;
-        Node  *node;
-    } body;
     FuncAttr attrs;
-    std::vector<FnCall *> *calls;
-    IrValue *ir;
+    Token *spec;
+    llvm::FunctionType *ir;
 
     bool isThrowable() {return static_cast<bool>(attrs & FuncThrow);}
-    bool isExtern() {return static_cast<bool>(attrs & FuncExtern);}
-
     void addAttr(FuncAttr attr) {
         using namespace llvm;
         attrs |= attr;
     }
 
-    bool hasAttr(FuncAttr attr) {return static_cast<bool>(attrs & attr);}
+    bool operator <(const FuncType& rhs) const
+    {
+        return (n_params < rhs.n_params && attrs < rhs.attrs);
+    }
+};
+
+struct Function : Node {
+    FuncType *type;
+    Token *import_name;
+    Token *import_lib;
+    Node *locals;
+    Node *temp_locals;
+
+    union {
+        Token *token;
+        Node  *node;
+    } body;
+    std::vector<FnCall *> *calls;
+    IrValue *ir;
+
+    bool isThrowable() {return static_cast<bool>(type->attrs & FuncThrow);}
+    bool isExtern() {return static_cast<bool>(type->attrs & FuncExtern);}
+
+    void addAttr(FuncAttr attr) {
+        using namespace llvm;
+        type->attrs |= attr;
+    }
+
+    bool hasAttr(FuncAttr attr) {return static_cast<bool>(type->attrs & attr);}
 };
 
 struct Variable : Node {
@@ -180,6 +197,11 @@ struct Catch : Node {
     Node *filter;
     Node *body;
     Node *handler;
+};
+
+struct Cast : Node {
+    Node *expr;
+    const Type *type;
 };
 
 typedef std::vector<std::pair<Node *, Node *>> SwitchCases;
@@ -245,6 +267,7 @@ private:
     SmallVector<uint32_t> tids;  // detect struct circular reference
     SmallVector<Token *> import_libs;
 
+    std::set<FuncType> funcTypeCache;
     SmallVector<std::tuple<Function*, FnCall*, bool>> unresolvedCalls;
     Token hiddenParamTok;
     Type uintPtrTy;
@@ -268,7 +291,7 @@ public:
     Context *parse(Token *tok);
 
 private:
-    Variable * addVar(Context *ctx, Token * name, bool is_local = false);
+    Variable * addVar(Context *ctx, Token * name, Variable *var = nullptr, bool is_local = false);
     void addDecl(Context *ctx, Token * name, Node *node);
     Context * findContext(Token *tok);
     Variable * findVar(Token * name, Context **ctx_out);
@@ -283,7 +306,7 @@ private:
 
     void addCurFuncAttr(FuncAttr attr) {
         using namespace llvm;
-        curCtx->func->attrs |= attr;
+        curCtx->func->type->attrs |= attr;
     }
 
     char scanByte(const char **bp);
@@ -303,11 +326,12 @@ private:
     Node * parseCatch(Token *tok, Token **rest);
     Node * parseThrow(Token *tok, Token **rest);
     Node * parseReturn(Token *tok, Token **rest);
-    Node * parseFnCall(Function *fn, Token *tok, Token **rest);
+    Node * parseFnCall(FuncType *ftype, Function *fn, Token *tok, Token **rest);
     Node * parseAssignment(Token *tok, Token **rest);
     Node * parseExpr(Token *tok, Token **rest);
+    Node * parseCast(Token *tok, Token **rest);
     Token * parseLocal(Token *tok, Function *func);
-    Token * parseFuncSpec(Token *tok, Function *func, bool is_collect = false);
+    Token * parseFuncSpec(Token *tok, FuncType *ftype, Function *func, bool is_collect = false);
     Token * parseEnum(Token *tok, Context *ctx);
     Token * parseImport(Token *tok, Context *ctx);
     Node * parseMembers(Token *tok, Token **rest);
@@ -328,6 +352,12 @@ private:
 
     bool resolveStruct(Type *ty, Context *ctx);
     void resolveDeclarations(Context *ctx);
+
+    Function *newFunction(Token *tok) {
+        auto func = newNode<Function>(TypeFunc, tok);
+        func->type = newNode<FuncType>(TypeFuncTy, tok);
+        return func;
+    }
 
     Context *newContext(Token *main_tok) {
         Context *c = new (nodeBuf.alloc(sizeof(Context))) Context;
@@ -373,8 +403,8 @@ private:
 
 // For debugging
 struct DumpState {
-    bool is_bin_op;
-    uint32_t indent;
+    bool is_bin_op = false;
+    uint32_t indent = 0;
     uint32_t nNode;
 };
 void dumpFunction(Function *func);

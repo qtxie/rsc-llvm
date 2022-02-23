@@ -51,6 +51,8 @@ public:
     ~CodeGen() {delete M;}
     CodeGen(Compilation &&) = delete;  // prevents rvalue binding
 
+    llvm::Value * readStructMember(Path *node);
+    llvm::Value * getStructMemberPtr(Path *node);
     llvm::Value * readVariable(Variable *var);
     llvm::Value * getPointer(Node *node);
 
@@ -101,6 +103,7 @@ private:
         return llvm::ConstantFP::get(f64_ty, ((Type *)node)->data.fvalue);
     }
 
+    llvm::StructType * createStruct(Struct *st);
     llvm::Constant * createCString(Node *node);
 
     llvm::BasicBlock * createBasicBlock(const llvm::Twine &name = "", llvm::BasicBlock *insertBefore = nullptr) {

@@ -70,6 +70,7 @@ NODE(While,              "while")
 NODE(Until,              "until")
 NODE(Loop,               "loop")
 NODE(Cast,               "cast")
+NODE(Member,             "struct-member")
 
 #undef TYPE
 #undef NODE

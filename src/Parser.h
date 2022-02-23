@@ -85,11 +85,16 @@ struct Type : Node {
     } data;
 };
 
+struct Struct : Type {
+    llvm::StructType *ir;
+};
+
 // Struct member
-struct Member : Type {
+struct Member : Node {
+    const Type *type;
     int idx;
-    int align;
-    int offset;
+    // int align;
+    // int offset;
 
     // Bitfield
     // bool is_bitfield;
@@ -167,6 +172,11 @@ struct Unary : Node {
     Node *value;
 };
 
+struct Path : Node {
+    Node *first;
+    Node *value;
+};
+
 struct Pointer : Node {
     Node *value;
     bool is_type(NodeId type_id) {
@@ -174,10 +184,6 @@ struct Pointer : Node {
             return ((Variable *)value)->type->id == type_id;
         return value->id == type_id;
     }
-};
-
-struct MemberAccess : Node {
-    Node *member;
 };
 
 struct FnCall : Node {
@@ -298,7 +304,7 @@ private:
     Node * findDecl(Token * name, Context **ctx_out);
     const Type * findType(Token * name,  Context **ctx_out);
 
-    Unary *getStructMember(Unary *st, Token *tok);
+    Unary *getStructMember(const Type *st, Token *tok);
 
     Node * checkArgType(Node *arg, Type *expected);
     const Type * addVarType(Node *node);

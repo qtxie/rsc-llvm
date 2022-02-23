@@ -220,7 +220,7 @@ const Type * Parser::parseType(Token *tok, Token **rest, bool is_block, bool is_
             resolveStruct((Type *)type, ctx);
             tok = tok->next;
         } else if ((type->id == TypeStruct || type->id == TypeStructUnresolved) && !is_collect) {
-            type = (Type *)newPtrType(type);
+            type = newPtrType(type);
         }
     } else {     // anonymous type
         if (tok->equals("struct!")) {
@@ -361,11 +361,8 @@ Node *Parser::parseMembers(Token *tok, Token **rest) {
     while (tok->id != TokenIdEof) {
         // typed-word = word "[" type "]"
         if (tok->id == TokenIdWord || tok->sub_id == TokenIdKeyword) {
-            Token *tag = tok;
-            const Type *type = parseType(tok->next, &tok);
-            Member *member = newNode<Member>();
-            *(Type *)member = *type;
-            member->tok = tag;
+            Member *member = newNode<Member>(NodeMember, tok);
+            member->type = parseType(tok->next, &tok);;
             member->idx = idx++;
             cur = cur->next = member;
         } else if (tok->id == TokenIdRBracket) {
@@ -382,7 +379,7 @@ Node *Parser::parseMembers(Token *tok, Token **rest) {
 Type * Parser::parseStruct(Token *tok, Token **rest, bool is_collect) {
     assert(tok->equals("struct!"));
     // struct-type = struct! "[" typed-word+ "]" "value"?
-    Type *st = newNode<Type>(TypeStruct, tok);
+    Type *st = newNode<Struct>(TypeStruct, tok);
     tok = tok->next;
     if (is_collect) {
         st->id = TypeStructUnresolved;
@@ -573,6 +570,7 @@ const Type * Parser::addVarType(Node *node) {
     else if (node->id == NodeVar) return ((Variable*)node)->type;
     else if (node->id == NodeCast) return (((Cast *)node)->type);
     else if (node->id == NodeEither) return nullptr;
+    else if (node->id == NodeMemberAccess) return nullptr;
     else comp.error(node->tok, err_expected, "expression");
 }
 
@@ -831,15 +829,11 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block, boo
     return head.next;
 }
 
-Unary * Parser::getStructMember(Unary *st, Token *tok) {
-    Variable *var = (Variable *)st->value;
-    assert(var->type->id == TypeStruct);
-
-    for (auto m = var->type->data.member; m; m = m->next) {
+Unary * Parser::getStructMember(const Type *st , Token *tok) {
+    for (auto m = st->data.member; m; m = m->next) {
         if (tok->equals(m->tok)) {
             auto mem = newNode<Unary>(NodeMemberAccess, tok);
             mem->value = m;
-            st->next = mem;
             return mem;
         }
     }
@@ -873,16 +867,23 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
     if (var->id == TypeFunc) return parseFnCall(nullptr, (Function *)var, tok, rest);
     if (var->id != NodeVar) comp.error(tok, err_expected, "variable");
 
-    auto type_id = var->type->id;
-    Unary *node = (Unary *)var;
+    const Type *ty = var->type;
+    Path *path = nullptr;
+    auto type_id = ty->id;
+    Node head{};
+    Node *cur = &head;
     while (tok->next->id == TokenIdSlash) {
         if (type_id == TypeStruct) {
-            node = newNode<Unary>(NodeMemberAccess, tok);
-            node->value = var;
+            if (!path) {
+                path = newNode<Path>(NodeMemberAccess, tok);
+                path->first = var;
+            }
             tok = tok->next->next;
-            node = getStructMember(node, tok);
-            if (!node) comp.error(tok, err_undeclared_name, tok->str());
-            type_id = ((Member *)node->value)->id;
+            cur = cur->next = getStructMember(ty, tok);
+            if (!cur) comp.error(tok, err_undeclared_name, tok->str());
+            Unary *node = (Unary *)cur;
+            ty = ((Member *)node->value)->type;
+            type_id = ty->id;
         } else if (type_id == TypePtr) {
 
         } else if (type_id == TypeArray) {
@@ -899,7 +900,13 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
         *rest = tok->next;
         is_setpath = true;
     }
-    return node;
+
+    if (path) {
+        path->value = head.next;
+        return path;
+    } else {
+        return var;
+    }
 }
 
 Node * Parser::checkArgType(Node *arg, Type *expected) {
@@ -1215,7 +1222,7 @@ Node * Parser::parseAssignment(Token *tok, Token **rest) {
         node = findVar(tok, &ctx);
         is_set = true;
     } else if (tok->id == TokenIdPath) {
-        node = parsePath(tok, &tok, is_set);
+        node = parsePath(tok, rest, is_set);
     } else {
         node = parseExpr(tok, rest);
     }

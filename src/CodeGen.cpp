@@ -61,6 +61,29 @@ CodeGen::CodeGen(Compilation &c) : comp(c) {
     firstLocalVar = nullptr;
 }
 
+llvm::Value * CodeGen::readStructMember(Path *path) {
+    return builder->CreateLoad(getStructMemberPtr(path));
+}
+
+llvm::Value * CodeGen::getStructMemberPtr(Path *path) {
+    assert(path->first->id == NodeVar);
+    
+    llvm::SmallVector<llvm::Value *> indices;
+    indices.push_back(llvm::ConstantInt::get(i32_ty, 0));
+
+    Variable *var = (Variable *)path->first;
+
+    Unary *node = (Unary *)path->value;
+    while (node) {
+        Member *m = (Member *)node->value;
+        indices.push_back(llvm::ConstantInt::get(i32_ty, m->idx));
+        node = (Unary *)node->next;
+    };
+
+    llvm::StructType *st = ((Struct *)var->type)->ir;
+    return builder->CreateGEP(st->getPointerTo()->getPointerElementType(), var->ir, indices);
+}
+
 llvm::Value * CodeGen::readVariable(Variable *var) {
     LOG() << var << " " << var->tok->str() << " " << var->ir << " " << var->attrs << '\n';
     return builder->CreateLoad(var->ir);
@@ -418,21 +441,22 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     llvm::Value *val = nullptr;
     switch (node->id)
     {
-    case NodeEither: val = emitEither((Either *)node); break;
-    case NodeSwitch: val = emitSwitch((Switch *)node); break;
-    case NodeAny:    val = emitAny((Any *)node); break;
-    case NodeAll:    val = emitAll((Any *)node); break;
-    case NodeCase:   val = emitCase((Case *)node); break;
-    case NodeCast:   val = emitCast((Cast *)node); break;
-    case NodeFnCall: val = emitCall((FnCall *)node); break;
-    case NodeVar:    val = readVariable((Variable *)node); break;
-    case NodeIdent:  val = readVariable(((Identifier *)node)->var); break;
-    case NodePtr:    val = getPointer(((Pointer *)node)->value); break;
-    case TypeInt:    val = getConstantInt(node); break;
-    case TypeByte:   val = getConstantInt(node); break;
-    case TypeDouble: val = getConstantFloat(node); break;
-    case TypeCStr:   val = createCString(node); break;
-    default:         val = emitBinOp(node); break;
+    case NodeEither:       val = emitEither((Either *)node); break;
+    case NodeSwitch:       val = emitSwitch((Switch *)node); break;
+    case NodeAny:          val = emitAny((Any *)node); break;
+    case NodeAll:          val = emitAll((Any *)node); break;
+    case NodeCase:         val = emitCase((Case *)node); break;
+    case NodeCast:         val = emitCast((Cast *)node); break;
+    case NodeFnCall:       val = emitCall((FnCall *)node); break;
+    case NodeVar:          val = readVariable((Variable *)node); break;
+    case NodeIdent:        val = readVariable(((Identifier *)node)->var); break;
+    case NodePtr:          val = getPointer(((Pointer *)node)->value); break;
+    case TypeInt:          val = getConstantInt(node); break;
+    case TypeByte:         val = getConstantInt(node); break;
+    case TypeDouble:       val = getConstantFloat(node); break;
+    case TypeCStr:         val = createCString(node); break;
+    case NodeMemberAccess: val = readStructMember((Path *)node); break;
+    default:               val = emitBinOp(node); break;
     }
     curVal = val;
     return val;
@@ -716,6 +740,22 @@ void CodeGen::emit(Context *ctx) {
     output();
 }
 
+llvm::StructType * CodeGen::createStruct(Struct *st) {
+    LOG() << st->tok->str() << '\n';
+    if (st->ir) return st->ir;
+
+    auto st_ty = llvm::StructType::create(Ctx, st->tok->str());
+    st->ir = st_ty;
+    llvm::SmallVector<llvm::Type *> types;
+    auto member = st->data.member;
+    while (member) {
+        types.push_back(llvmType(((Member *)member)->type));
+        member = member->next;
+    }
+    st_ty->setBody(types);
+    return st_ty;
+}
+
 llvm::Type * CodeGen::llvmType(const Node *node) {
     const Type *ty = (const Type *)node;
     if (node->id == NodeVar)
@@ -730,6 +770,7 @@ llvm::Type * CodeGen::llvmType(const Node *node) {
     case TypeByte:   return byte_ty;
     case TypePtr:    return llvmType(ty->data.type)->getPointerTo();
     case TypeCStr:   return byte_ty->getPointerTo();
+    case TypeStruct: return createStruct((Struct *)ty);
     //case TypeArray:  return llvm::ArrayType::get(byte_ty, ty->tok->len);
     case TypeFuncTy: {
         auto ftype = (FuncType *)ty;

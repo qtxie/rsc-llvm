@@ -185,11 +185,11 @@ option("llvm")
             "lldYAML"
         )
         if is_mode("debug") then 
-            add_linkdirs("../../../llvm+clang+lld-13.0.0-x86_64-windows-msvc-debug/lib")
-            add_includedirs("../../../llvm+clang+lld-13.0.0-x86_64-windows-msvc-debug/include")
+            add_linkdirs("D:/llvm+clang+lld-13.0.0-x86_64-windows-msvc-debug/lib")
+            add_includedirs("D:/llvm+clang+lld-13.0.0-x86_64-windows-msvc-debug/include")
         elseif is_mode("release") then
-            add_linkdirs("../../../llvm+clang+lld-13.0.0-x86_64-windows-msvc-release-mt/lib")
-            add_includedirs("../../../llvm+clang+lld-13.0.0-x86_64-windows-msvc-release-mt/include")
+            add_linkdirs("D:/llvm+clang+lld-13.0.0-x86_64-windows-msvc-release-mt/lib")
+            add_includedirs("D:/llvm+clang+lld-13.0.0-x86_64-windows-msvc-release-mt/include")
         end
     elseif is_plat("linux") then
         add_links(

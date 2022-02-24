@@ -57,6 +57,7 @@ public:
     llvm::Value * getPointer(Node *node);
 
     llvm::Value * emitCode(Node *node);
+    llvm::Value * emitSizeOf(Unary *node);
     llvm::Value * emitCast(Cast *node);
     llvm::Value * emitAll(Any *node);
     llvm::Value * emitAny(Any *node);

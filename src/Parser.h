@@ -316,7 +316,7 @@ private:
     }
 
     char scanByte(const char **bp);
-    const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false);
+    const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false, bool error = true);
     Node * parseByte(Token *tok);
     Node * parseString(Token *tok);
     Node * parseAnyAll(Token *tok, Token **rest, NodeId id);
@@ -332,6 +332,7 @@ private:
     Node * parseCatch(Token *tok, Token **rest);
     Node * parseThrow(Token *tok, Token **rest);
     Node * parseReturn(Token *tok, Token **rest);
+    Node * parseSizeOf(Token *tok, Token **rest);
     Node * parseFnCall(FuncType *ftype, Function *fn, Token *tok, Token **rest);
     Node * parseAssignment(Token *tok, Token **rest);
     Node * parseExpr(Token *tok, Token **rest);

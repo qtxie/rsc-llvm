@@ -435,6 +435,18 @@ llvm::Value * CodeGen::emitCast(Cast *node) {
     return builder->CreateFPCast(val, llvmType(node->type));
 }
 
+llvm::Value * CodeGen::emitSizeOf(Unary *node) {
+    llvm::Type *ty;
+    if (node->value->id < TypeEnd) {   // is a type name
+        ty = llvmType(node->value);
+    } else {
+        auto val = emitExpr(node->value);
+        ty = val->getType();
+    }
+    auto sz = M->getDataLayout().getTypeAllocSize(ty).getFixedSize();
+    return llvm::ConstantInt::get(i64_ty, sz);
+}
+
 llvm::Value * CodeGen::emitExpr(Node *node) {
     LOG() << NodeName[node->id] << '\n';
 
@@ -456,6 +468,7 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     case TypeDouble:       val = getConstantFloat(node); break;
     case TypeCStr:         val = createCString(node); break;
     case NodeMemberAccess: val = readStructMember((Path *)node); break;
+    case NodeSizeOf:       val = emitSizeOf((Unary *)node); break;
     default:               val = emitBinOp(node); break;
     }
     curVal = val;

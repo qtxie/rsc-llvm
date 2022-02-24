@@ -207,10 +207,12 @@ const Type * Parser::findType(Token *name, Context **ctx) {
     return nullptr;
 }
 
-const Type * Parser::parseType(Token *tok, Token **rest, bool is_block, bool is_collect) {
+const Type * Parser::parseType(Token *tok, Token **rest, bool is_block, bool is_collect, bool error) {
     if (is_block) tok = skip(tok, TokenIdLBracket, '[');
-    if (tok->id != TokenIdWord)
-        comp.error(tok, err_expected, "datatype");
+    if (tok->id != TokenIdWord) {
+        if (error) comp.error(tok, err_expected, "datatype");
+        else return nullptr;
+    }
     Context *ctx = nullptr;
     const Type *type = findType(tok, &ctx);
     LOG() << type << " " << tok->str() << '\n';
@@ -233,7 +235,8 @@ const Type * Parser::parseType(Token *tok, Token **rest, bool is_block, bool is_
         } else if (tok->equals("pointer!")) {
             type = newPtrType(parseType(tok->next, &tok, true, is_collect));
         } else {
-            comp.error(tok, err_invalid_type);
+            if (error) comp.error(tok, err_invalid_type);
+            else return nullptr;
         }
     }
     if (is_block) tok = skip(tok, TokenIdRBracket, ']');
@@ -1129,6 +1132,22 @@ Node * Parser::parseCast(Token *tok, Token **rest) {
     return node;
 }
 
+Node * Parser::parseSizeOf(Token *tok, Token **rest) {
+    tok = tok->next;
+    auto node = newNode<Unary>(NodeSizeOf, tok);
+    auto ty = parseType(tok, rest, false, false, false);
+
+    // @@ we have to do this because `rest` points to the token beyond end token
+    if (ty) {
+        auto end = *rest;
+        while (tok->next < end) tok = tok->next;
+        *rest = tok;
+    }
+
+    node->value = ty ? (Node *)ty : parseExpr(tok, rest);
+    return node;
+}
+
 Node * Parser::parseExpr(Token *tok, Token **rest) {
     Context *ctx = nullptr;
     Node *node = nullptr;
@@ -1202,6 +1221,7 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
         case TokenIdCase:   node = parseCase(tok, &tok); break;
         case TokenIdSwitch: node = parseSwitch(tok, &tok); break;
         case TokenIdAs:     node = parseCast(tok, &tok); break;
+        case TokenIdSize:   node = parseSizeOf(tok, &tok); break;
         case TokenIdFunc:  // anonymous function
         case TokenIdAlias:
         default:

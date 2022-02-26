@@ -347,32 +347,53 @@ llvm::Value * CodeGen::emitBinOp(Node *node) {
     llvm::Value *left = emitExpr(bin_op->lhs);
     llvm::Value *right = emitExpr(bin_op->rhs);
     assert(left != nullptr && right != nullptr);
-    llvm::Value *result = nullptr; 
-    switch (node->id)
-    {
-    case NodeAdd:        return builder->CreateNSWAdd(left, right);
-    case NodeSub:        return builder->CreateNSWSub(left, right);
-    case NodeMul:        return builder->CreateNSWMul(left, right);
-    case NodeDiv:        return builder->CreateSDiv(left, right);
-    case NodeRemainder:  return builder->CreateSRem(left, right);
-    // case NodeModulo:     return builder->Create(left, right);
-    case NodeEq:         return builder->CreateICmpEQ(left, right);
-    case NodeNotEq:      return builder->CreateICmpNE(left, right);
-    case NodeLess:       return builder->CreateICmpSLT(left, right);
-    case NodeLessEq:     return builder->CreateICmpSLE(left, right);
-    case NodeGreater:    return builder->CreateICmpSGT(left, right);
-    case NodeGreaterEq:  return builder->CreateICmpSGE(left, right);
-    case NodeAnd:        return builder->CreateAnd(left, right);
-    case NodeOr:         return builder->CreateOr(left, right);
-    case NodeXor:        return builder->CreateXor(left, right);
-    case NodeShiftLeft:  return builder->CreateShl(left, right);
-    case NodeShiftRight: return builder->CreateAShr(left, right);
-    case NodeShiftRightLogical: return builder->CreateLShr(left, right);
-    default:
-        assert(false);
-        break;
+    llvm::Value *result = nullptr;
+    LOG() << bin_op << " " << NodeName[bin_op->id] << '\n';
+    auto ty = bin_op->type->id;
+    if (ty == TypeFloat || ty == TypeDouble) {
+        switch (node->id)
+        {
+        case NodeAdd:        return builder->CreateFAdd(left, right);
+        case NodeSub:        return builder->CreateFSub(left, right);
+        case NodeMul:        return builder->CreateFMul(left, right);
+        case NodeDiv:        return builder->CreateFDiv(left, right);
+        case NodeRemainder:  return builder->CreateFRem(left, right);
+        // case NodeModulo:     return builder->Create(left, right);
+        case NodeEq:         return builder->CreateFCmpOEQ(left, right);
+        case NodeNotEq:      return builder->CreateFCmpONE(left, right);
+        case NodeLess:       return builder->CreateFCmpOLT(left, right);
+        case NodeLessEq:     return builder->CreateFCmpOLE(left, right);
+        case NodeGreater:    return builder->CreateFCmpOGT(left, right);
+        case NodeGreaterEq:  return builder->CreateFCmpOGE(left, right);
+        default:
+            break;
+        }
+    } else {
+        switch (node->id)
+        {
+        case NodeAdd:        return builder->CreateNSWAdd(left, right);
+        case NodeSub:        return builder->CreateNSWSub(left, right);
+        case NodeMul:        return builder->CreateNSWMul(left, right);
+        case NodeDiv:        return builder->CreateSDiv(left, right);
+        case NodeRemainder:  return builder->CreateSRem(left, right);
+        // case NodeModulo:     return builder->Create(left, right);
+        case NodeEq:         return builder->CreateICmpEQ(left, right);
+        case NodeNotEq:      return builder->CreateICmpNE(left, right);
+        case NodeLess:       return builder->CreateICmpSLT(left, right);
+        case NodeLessEq:     return builder->CreateICmpSLE(left, right);
+        case NodeGreater:    return builder->CreateICmpSGT(left, right);
+        case NodeGreaterEq:  return builder->CreateICmpSGE(left, right);
+        case NodeAnd:        return builder->CreateAnd(left, right);
+        case NodeOr:         return builder->CreateOr(left, right);
+        case NodeXor:        return builder->CreateXor(left, right);
+        case NodeShiftLeft:  return builder->CreateShl(left, right);
+        case NodeShiftRight: return builder->CreateAShr(left, right);
+        case NodeShiftRightLogical: return builder->CreateLShr(left, right);
+        default:
+            break;
+        }
     }
-    llvm_unreachable("emitBinOp");
+    error(bin_op, err_types_for_operator_not_compatible, bin_op->tok->str());
 }
 
 llvm::Value * CodeGen::emitAll(Any *node) {
@@ -432,7 +453,16 @@ inline llvm::Constant * CodeGen::createCString(Node *node) {
 
 llvm::Value * CodeGen::emitCast(Cast *node) {
     auto val = emitExpr(node->expr);
-    return builder->CreateFPCast(val, llvmType(node->type));
+    auto ty = val->getType();
+    auto to_ty = llvmType(node->type);
+    if (ty->isIntegerTy()) {
+        if (to_ty->isFloatingPointTy()) return builder->CreateSIToFP(val, to_ty);
+        if (to_ty->isIntegerTy()) return builder->CreateIntCast(val, to_ty, true);
+        if (to_ty->isPointerTy()) return builder->CreateIntToPtr(val, to_ty);
+    } else if (ty->isFloatingPointTy()) {
+        if (to_ty->isFloatingPointTy()) return builder->CreateFPCast(val, to_ty);
+        if (to_ty->isIntegerTy()) return builder->CreateFPToSI(val, to_ty);
+    }
 }
 
 llvm::Value * CodeGen::emitSizeOf(Unary *node) {

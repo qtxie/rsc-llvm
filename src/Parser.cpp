@@ -583,25 +583,29 @@ const Type * Parser::analyzeMathType(BinaryOp *bin) {
     if (lhs_ty->id == TypePtr) {
         if (rhs_ty->id != TypeInt && rhs_ty->id != TypePtr)
             error(rhs, err_conv_type, TypeName[rhs_ty->id], TypeName[TypePtr]);
-        return lhs_ty;
+    } else {
+        auto result = TypeConv[rhs_ty->id][lhs_ty->id];
+        auto msg_id = note_no_error;
+        switch (result)
+        {
+        case tc_same: break;
+        case tc_i_ii: 
+        case tc_i_if:
+        case tc_i_ff: bin->rhs = newCast(rhs, lhs_ty); break;
+        case tc_fail: msg_id = err_conv_type; break;
+        default: msg_id = err_no_implicit_conv; break;
+        }
+        if (msg_id != note_no_error)
+            error(rhs, msg_id, TypeName[rhs_ty->id], TypeName[lhs_ty->id]);
     }
-    auto result = TypeConv[rhs_ty->id][lhs_ty->id];
-    auto msg_id = note_no_error;
-    switch (result)
-    {
-    case tc_same: break;
-    case tc_i_ii: 
-    case tc_i_if:
-    case tc_i_ff: bin->rhs = newCast(rhs, lhs_ty); break;
-    case tc_fail: msg_id = err_conv_type; break;
-    default: msg_id = err_no_implicit_conv; break;
-    }
-    if (msg_id != note_no_error) error(rhs, msg_id, TypeName[rhs_ty->id], TypeName[lhs_ty->id]);
+    LOG() << bin << ' ' << NodeName[bin->id] << " " << TypeName[lhs_ty->id] << '\n';
     bin->type = lhs_ty;
     return lhs_ty;
 }
 
 const Type * Parser::analyzeNodeType(Node *node) {
+    LOG() << NodeName[node->id] << '\n';
+
     if (node->id < TypeEnd) return (Type *)node;
 
     switch (node->id)
@@ -621,9 +625,26 @@ const Type * Parser::analyzeNodeType(Node *node) {
     case NodeMul:
     case NodeDiv:
     case NodeModulo:
-    case NodeRemainder: return analyzeMathType((BinaryOp *)node);
+    case NodeRemainder:  return analyzeMathType((BinaryOp *)node);
+    case NodeEq:        
+    case NodeNotEq:     
+    case NodeLess:      
+    case NodeLessEq:    
+    case NodeGreater:   
+    case NodeGreaterEq: 
+    case NodeAnd:       
+    case NodeOr:        
+    case NodeXor:       
+    case NodeShiftLeft: 
+    case NodeShiftRight:
+    case NodeShiftRightLogical: {
+        BinaryOp *bin = (BinaryOp *)node;
+        bin->type = analyzeNodeType(bin->lhs);
+        return bin->type;
+    }
     case NodeEither: {
         Either *e = (Either *)node;
+        analyzeNodeType(e->cond);
         auto t1 = analyzeType(e->then_body);
         auto t2 = analyzeType(e->else_body);
         if (t1->id == t2->id) return t1; else return &voidTy;
@@ -643,10 +664,23 @@ const Type * Parser::analyzeNodeType(Node *node) {
         }
         return ty;
     }
+    case NodeWhile: {
+        While *w = (While *)node;
+        analyzeType(w->cond);
+        analyzeType(w->body);
+        return &voidTy;
+    }
+    case NodeUntil:
+        analyzeType(((Until *)node)->body);
+        return &voidTy;
+
     case NodeAny:    // fall thru
-    case NodeAll:    return &boolTy;
+    case NodeAll:    analyzeType(((Any *)node)->cases); return &boolTy;
     case NodeCase:   return analyzeNodeType(((Case *)node)->cases);
-    case NodeIf:     return analyzeType(((If *)node)->body);
+    case NodeIf:
+        analyzeNodeType(((If *)node)->cond);
+        return analyzeType(((If *)node)->body);
+
     case NodeNull:   return &nullTy;
     case NodeIdent:  return ((Identifier *)node)->var->type;
     case NodePtr:    return ((Pointer *)node)->type;

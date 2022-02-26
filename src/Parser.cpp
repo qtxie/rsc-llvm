@@ -123,7 +123,7 @@ enum TypeConvResult : uint8_t {
 };
 
 // TypeConv[from][to]
-static const TypeConvResult TypeConv[TypeType][TypeType] = {
+static const TypeConvResult TypeConv[TypeStruct + 1][TypeStruct + 1] = {
 // To: void    null     bool     byte     i32      f32      f64      enum     ptr     struct
     {tc_same, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail, tc_fail},  // From void
     {tc_fail, tc_same, tc_e_ii, tc_e_ii, tc_e_ii, tc_fail, tc_fail, tc_e_ii, tc_same, tc_fail},  // From null
@@ -277,7 +277,6 @@ Token * Parser::parseLocal(Token *tok, Function *func) {
         auto name = ident.next;
         while (n--) {
             Variable *local = newNode<Variable>(NodeVar, name);
-            local->type = newNode<Type>(TypeVoid, name);
             cur = cur->next = local;
             name = name->next;
         }
@@ -562,52 +561,106 @@ const Type * Parser::addVarType(Node *node) {
         Assignment *assign = (Assignment *)node;
         Variable *var = (Variable *) assign->lhs;
         const Type *ty = addVarType(assign->rhs);
-        if (!var->type || var->type->id == TypeVoid)
+        if (!var->type) {
+            if (ty->id == TypeVoid) error(assign->rhs, err_no_type, var->tok->str());
             var->type = ty;
-        //else check type
+        } else {
+            // Type checking
+            if (!var->is_type(ty))
+                error(assign->rhs, err_expected_type, TypeName[var->type->id], TypeName[ty->id]);
+        }
         LOG() << var->tok->str() << " " << TypeName[var->type->id] << '\n';
         return ty;
+    } else {
+        return analyzeNodeType(node);
     }
-    else if (node->id < TypeEnd) return (Type *)node;
-    else if (node->id == NodeFnCall) return ((FnCall*)node)->fn->type->return_type;
-    else if (node->id == NodeVar) return ((Variable*)node)->type;
-    else if (node->id == NodeCast) return (((Cast *)node)->type);
-    else if (node->id == NodeEither) return nullptr;
-    else if (node->id == NodeMemberAccess) return nullptr;
-    else comp.error(node->tok, err_expected, "expression");
 }
 
-void Parser::addTypeInfo(Node *node) {
-    while (node) {
-        LOG() << NodeName[node->id] << '\n';
-        switch (node->id)
-        {
-        case NodeAssign:
-            addVarType(node);
-            break;
-        case NodeIf:
-            addTypeInfo(((If *)node)->body);
-            break;
-        case NodeFnCall:
-            addTypeInfo(((FnCall *)node)->args);
-            break;
-        case NodeIdent:
-            if (((Identifier *)node)->is_type(TypeVoid))
-                error(node, err_not_initialized, node->str());
-            break;
-        case NodePtr:
-            if (((Pointer *)node)->is_type(TypeVoid))
-                error(node, err_not_initialized, node->str());
-            break;
-        case NodeCast: {
-            auto expr = ((Cast *)node)->expr;
-            addTypeInfo(expr);
-        } break;
-        default:
-            break;
+const Type * Parser::analyzeMathType(BinaryOp *bin) {
+    auto rhs = bin->rhs;
+    auto lhs_ty = analyzeNodeType(bin->lhs);
+    auto rhs_ty = analyzeNodeType(rhs);
+    if (lhs_ty->id == TypePtr) {
+        if (rhs_ty->id != TypeInt && rhs_ty->id != TypePtr)
+            error(rhs, err_conv_type, TypeName[rhs_ty->id], TypeName[TypePtr]);
+        return lhs_ty;
+    }
+    auto result = TypeConv[rhs_ty->id][lhs_ty->id];
+    auto msg_id = note_no_error;
+    switch (result)
+    {
+    case tc_same: break;
+    case tc_i_ii: 
+    case tc_i_if:
+    case tc_i_ff: bin->rhs = newCast(rhs, lhs_ty); break;
+    case tc_fail: msg_id = err_conv_type; break;
+    default: msg_id = err_no_implicit_conv; break;
+    }
+    if (msg_id != note_no_error) error(rhs, msg_id, TypeName[rhs_ty->id], TypeName[lhs_ty->id]);
+    bin->type = lhs_ty;
+    return lhs_ty;
+}
+
+const Type * Parser::analyzeNodeType(Node *node) {
+    if (node->id < TypeEnd) return (Type *)node;
+
+    switch (node->id)
+    {
+    case NodeAssign: return addVarType(node);
+    case NodeFnCall: {
+        analyzeType(((FnCall *)node)->args);   // type-checking for args
+        return ((FnCall*)node)->type->return_type;
+    }
+    case NodeVar: return ((Variable*)node)->type;
+    case NodeCast: {
+        analyzeNodeType(((Cast *)node)->expr);
+        return (((Cast *)node)->type);
+    }
+    case NodeAdd:
+    case NodeSub:
+    case NodeMul:
+    case NodeDiv:
+    case NodeModulo:
+    case NodeRemainder: return analyzeMathType((BinaryOp *)node);
+    case NodeEither: {
+        Either *e = (Either *)node;
+        auto t1 = analyzeType(e->then_body);
+        auto t2 = analyzeType(e->else_body);
+        if (t1->id == t2->id) return t1; else return &voidTy;
+    }
+    case NodeSwitch: {
+        Switch *s = (Switch *)node;
+        const Type *ty = nullptr;
+        for (auto &[val, body] : *s->cases) {
+            auto cur_ty = analyzeType(body);
+            if (!ty) ty = cur_ty;
+            else if (cur_ty->id != ty->id) return &voidTy;
         }
+        if (s->defaultCase) {
+            auto cur_ty = analyzeType(s->defaultCase);
+            if (!ty) ty = cur_ty;
+            else if (cur_ty->id != ty->id) return &voidTy;
+        }
+        return ty;
+    }
+    case NodeAny:    // fall thru
+    case NodeAll:    return &boolTy;
+    case NodeCase:   return analyzeNodeType(((Case *)node)->cases);
+    case NodeIf:     return analyzeType(((If *)node)->body);
+    case NodeNull:   return &nullTy;
+    case NodeIdent:  return ((Identifier *)node)->var->type;
+    case NodePtr:    return ((Pointer *)node)->type;
+    default:         return &voidTy;
+    }
+}
+
+const Type * Parser::analyzeType(Node *node) {
+    const Type *curTy = &voidTy;
+    while (node) {
+        curTy = analyzeNodeType(node);
         node = node->next;
     }
+    return curTy;
 }
 
 void Parser::updateCall(Function *fn, FnCall *call, bool is_main_func) {
@@ -632,9 +685,7 @@ void Parser::updateCall(Function *fn, FnCall *call, bool is_main_func) {
     }
     Node *arg;
     if (is_main_func) {
-        auto ptr = newNode<Pointer>(NodePtr, var->tok);
-        ptr->value = var;
-        arg = ptr;
+        arg = newPtrNode(var, var->tok);
     } else {
         auto ident = newNode<Identifier>(NodeIdent, var->tok);
         ident->var = var;
@@ -929,6 +980,7 @@ Node * Parser::checkArgType(Node *arg, Type *expected) {
 Node * Parser::parseFnCall(FuncType *ftype, Function *fn, Token *tok, Token **rest) {
     if (!ftype) ftype = fn->type;
     auto call = newNode<FnCall>(NodeFnCall, tok);
+    call->type = ftype;
     call->fn = fn;
     Node head{};
     Node *cur = &head;
@@ -1181,9 +1233,7 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
             node = findDecl(tok, &ctx);
             if (node) {
                 if (node->id == NodeVar || node->id == TypeFunc) {
-                    auto ptr = newNode<Pointer>(NodePtr, tok);
-                    ptr->value = node;
-                    node = ptr;
+                    node = newPtrNode(node, tok);
                 } else {
                     comp.error(tok, err_expected, "variable or function");
                 }
@@ -1222,6 +1272,7 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
         case TokenIdSwitch: node = parseSwitch(tok, &tok); break;
         case TokenIdAs:     node = parseCast(tok, &tok); break;
         case TokenIdSize:   node = parseSizeOf(tok, &tok); break;
+        case TokenIdNull:   node = newNode<Node>(NodeNull, tok); break;
         case TokenIdFunc:  // anonymous function
         case TokenIdAlias:
         default:
@@ -1504,7 +1555,7 @@ Node * Parser::parseCodeBlock(Token *tok, Context *ctx, bool is_func_body) {
 
     curCtx = ctx;
 
-    addTypeInfo(ast);
+    analyzeType(ast);
 
     LOG.unindent(); LOG() << "end\n";
     return ast;

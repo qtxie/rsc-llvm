@@ -85,13 +85,16 @@ struct Type : Node {
     } data;
 };
 
+struct TypedNode : Node {
+    const Type *type;
+};
+
 struct Struct : Type {
     llvm::StructType *ir;
 };
 
 // Struct member
-struct Member : Node {
-    const Type *type;
+struct Member : TypedNode {
     int idx;
     // int align;
     // int offset;
@@ -125,7 +128,7 @@ struct FuncType : Type {
 };
 
 struct Function : Node {
-    FuncType *type;
+    FuncType *type;    //@@ make sure type is the first member
     Token *import_name;
     Token *import_lib;
     Node *locals;
@@ -149,11 +152,10 @@ struct Function : Node {
     bool hasAttr(FuncAttr attr) {return static_cast<bool>(type->attrs & attr);}
 };
 
-struct Variable : Node {
-    const Type *type;
+struct Variable : TypedNode {
     VarAttr attrs;
     IrValue *ir;
-    bool is_type(NodeId type_id) {return type->id == type_id;}
+    bool is_type(const Type *ty) {return type->id == ty->id;}
 };
 
 struct Identifier: Node {
@@ -161,7 +163,7 @@ struct Identifier: Node {
     bool is_type(NodeId type_id) {return var->type->id == type_id;}
 };
 
-struct BinaryOp : Node {
+struct BinaryOp : TypedNode {
     Node *lhs;
     Node *rhs;
 };
@@ -177,16 +179,15 @@ struct Path : Node {
     Node *value;
 };
 
-struct Pointer : Node {
+struct Pointer : TypedNode {
     Node *value;
     bool is_type(NodeId type_id) {
-        if (value->id == NodeVar)
-            return ((Variable *)value)->type->id == type_id;
-        return value->id == type_id;
+        return ((Variable *)value)->type->id == type_id;
     }
 };
 
 struct FnCall : Node {
+    FuncType *type;  //@@ make sure type is the first member
     Function *fn;
     Node *args;
 };
@@ -205,9 +206,8 @@ struct Catch : Node {
     Node *handler;
 };
 
-struct Cast : Node {
+struct Cast : TypedNode {
     Node *expr;
-    const Type *type;
 };
 
 typedef std::vector<std::pair<Node *, Node *>> SwitchCases;
@@ -278,6 +278,9 @@ private:
     Token hiddenParamTok;
     Type uintPtrTy;
     Type uintTy;
+    Type voidTy;
+    Type nullTy;
+    Type boolTy;
     NodeBuffer nodeBuf;
 
     Logger LOG;
@@ -288,6 +291,9 @@ public:
         hiddenParamTok.loc = "__r/s_throw_";
         hiddenParamTok.len = std::char_traits<char>::length(hiddenParamTok.loc);
         uintTy = Type{TypeInt, false, 4, 4, nullptr, nullptr, TypeInt};
+        boolTy = Type{TypeBool, false, 1, 1, nullptr, nullptr, TypeBool};
+        voidTy = Type{TypeVoid};
+        nullTy = Type{TypeNull};
         uintPtrTy.id = TypePtr;
         uintPtrTy.data.type = &uintTy;
     };
@@ -308,7 +314,9 @@ private:
 
     Node * checkArgType(Node *arg, Type *expected);
     const Type * addVarType(Node *node);
-    void addTypeInfo(Node *node);
+    const Type * analyzeMathType(BinaryOp *bin);
+    const Type * analyzeNodeType(Node *node);
+    const Type * analyzeType(Node *node);
 
     void addCurFuncAttr(FuncAttr attr) {
         using namespace llvm;
@@ -360,6 +368,13 @@ private:
     bool resolveStruct(Type *ty, Context *ctx);
     void resolveDeclarations(Context *ctx);
 
+    Cast *newCast(Node *val, const Type *type) {
+        auto node = newNode<Cast>(NodeCast, val->tok);
+        node->expr = val;
+        node->type = type;
+        return node;
+    }
+
     Function *newFunction(Token *tok) {
         auto func = newNode<Function>(TypeFunc, tok);
         func->type = newNode<FuncType>(TypeFuncTy, tok);
@@ -378,6 +393,13 @@ private:
         ptr->id = TypePtr;
         ptr->tid = TypePtr;
         ptr->data.type = basetype;
+        return ptr;
+    }
+
+    Pointer *newPtrNode(Node *val, Token *tok) {
+        auto ptr = newNode<Pointer>(NodePtr, tok);
+        ptr->type = newPtrType(((TypedNode *)val)->type);
+        ptr->value = val;
         return ptr;
     }
 

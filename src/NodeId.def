@@ -71,6 +71,7 @@ NODE(Until,              "until")
 NODE(Loop,               "loop")
 NODE(Cast,               "cast")
 NODE(SizeOf,             "size?")
+NODE(Declare,            "declare")
 NODE(Member,             "struct-member")
 NODE(Null,               "null")
 

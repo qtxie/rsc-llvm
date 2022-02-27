@@ -155,12 +155,17 @@ struct Function : Node {
 struct Variable : TypedNode {
     VarAttr attrs;
     IrValue *ir;
-    bool is_type(const Type *ty) {return type->id == ty->id;}
+    bool isType(const Type *ty) {return type->id == ty->id;}
+    bool isType(NodeId id) {return type->id == id;}
+    bool isGlobal() {return static_cast<bool>(attrs & VarGlobal);}
+    void addAttr(VarAttr attr) {
+        attrs = static_cast<VarAttr>(attrs | attr);
+    }
 };
 
 struct Identifier: Node {
     Variable *var;
-    bool is_type(NodeId type_id) {return var->type->id == type_id;}
+    bool isType(NodeId type_id) {return var->type->id == type_id;}
 };
 
 struct BinaryOp : TypedNode {
@@ -181,7 +186,7 @@ struct Path : Node {
 
 struct Pointer : TypedNode {
     Node *value;
-    bool is_type(NodeId type_id) {
+    bool isType(NodeId type_id) {
         return ((Variable *)value)->type->id == type_id;
     }
 };
@@ -273,6 +278,8 @@ private:
     SmallVector<uint32_t> tids;  // detect struct circular reference
     SmallVector<Token *> import_libs;
 
+    bool isGlobal;
+    bool isDeclare;
     std::set<FuncType> funcTypeCache;
     SmallVector<std::tuple<Function*, FnCall*, bool>> unresolvedCalls;
     Token hiddenParamTok;
@@ -287,6 +294,8 @@ private:
 
 public:
     Parser(Compilation &c, CodeGen &_codegen) : Utils(c), codegen(_codegen), curTypeId(1000) {
+        isGlobal = false;
+        isDeclare = false;
         hiddenParamTok.id = TokenIdWord;
         hiddenParamTok.loc = "__r/s_throw_";
         hiddenParamTok.len = std::char_traits<char>::length(hiddenParamTok.loc);
@@ -340,6 +349,7 @@ private:
     Node * parseCatch(Token *tok, Token **rest);
     Node * parseThrow(Token *tok, Token **rest);
     Node * parseReturn(Token *tok, Token **rest);
+    Node * parseDeclare(Token *tok, Token **rest);
     Node * parseSizeOf(Token *tok, Token **rest);
     Node * parseFnCall(FuncType *ftype, Function *fn, Token *tok, Token **rest);
     Node * parseAssignment(Token *tok, Token **rest);

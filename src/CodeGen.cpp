@@ -499,6 +499,7 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     case TypeCStr:         val = createCString(node); break;
     case NodeMemberAccess: val = readStructMember((Path *)node); break;
     case NodeSizeOf:       val = emitSizeOf((Unary *)node); break;
+    case NodeDeclare:      break;
     default:               val = emitBinOp(node); break;
     }
     curVal = val;
@@ -508,10 +509,21 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
 llvm::Value * CodeGen::emitAssignment(Assignment *node) {
     auto in_assign = inAssign;
     inAssign = true;
-    Variable *left = (Variable *)node->lhs;
-    resultVar = left->ir;
 
-    LOG() << left->tok->str() << left->ir << '\n';
+    auto dest_id = node->lhs->id;
+    bool is_global;
+    llvm::Value *dest;
+    if (dest_id == NodeVar) {
+        Variable *left = (Variable *)node->lhs;
+        is_global = left->isGlobal();
+        dest = left->ir;
+    } else if (dest_id == NodeMemberAccess) {   // set struct memeber
+        Path *path = (Path *)node->lhs;
+        is_global = false;
+        dest = getStructMemberPtr(path);
+    }
+    resultVar = dest;
+
     llvm::Value *val = nullptr;
     if (node->rhs->id == NodeAssign) {
         val = emitAssignment((Assignment *)node->rhs);
@@ -519,13 +531,17 @@ llvm::Value * CodeGen::emitAssignment(Assignment *node) {
         val = emitExpr(node->rhs);
     }
 
-    if (left->ir) {  // assingment
-        builder->CreateStore(val, left->ir);
-    } else {         // declare global variable
-        auto var = emitGlobalVar(left);
-        if (llvm::isa<llvm::Constant>(val))
+    if (is_global || dest == nullptr) {
+        Variable *left = (Variable *)node->lhs;
+        llvm::GlobalVariable *var = dest ? llvm::cast<llvm::GlobalVariable>(dest) : emitGlobalVar(left);
+        if (val && llvm::isa<llvm::Constant>(val))
             var->setInitializer(llvm::cast<llvm::Constant>(val));
+        else
+            var->setInitializer(llvm::ConstantAggregateZero::get(llvmType(left->type)));
+    } else {
+        builder->CreateStore(val, dest);
     }
+
     inAssign = in_assign;
     return val;
 }
@@ -641,7 +657,10 @@ void CodeGen::emitFunc(Function *fn) {
         Node *cur = &head;
         while (node) {
             Variable *var = (Variable *) node;
-            var->ir = builder->CreateAlloca(llvmType(var->type));
+            if (!var->isGlobal())
+                var->ir = builder->CreateAlloca(llvmType(var->type));
+            else
+                emitGlobalVar(var);
             cur = cur->next = var;
             node = node->next;
         }

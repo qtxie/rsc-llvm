@@ -221,7 +221,7 @@ const Type * Parser::parseType(Token *tok, Token **rest, bool is_block, bool is_
         if (type->id == TypeStructUnresolved && !is_collect && tok->id == TokenIdWord && tok->equals("value")) { // struct value
             resolveStruct((Type *)type, ctx);
             tok = tok->next;
-        } else if ((type->id == TypeStruct || type->id == TypeStructUnresolved) && !is_collect) {
+        } else if ((type->id == TypeStruct || type->id == TypeStructUnresolved) && !isDeclare) {
             type = newPtrType(type);
         }
     } else {     // anonymous type
@@ -559,17 +559,25 @@ void Parser::resolveDeclarations(Context *ctx) {
 const Type * Parser::addVarType(Node *node) {
     if (node->id == NodeAssign) {
         Assignment *assign = (Assignment *)node;
-        Variable *var = (Variable *) assign->lhs;
+        auto dest_id = assign->lhs->id;
         const Type *ty = addVarType(assign->rhs);
-        if (!var->type) {
-            if (ty->id == TypeVoid) error(assign->rhs, err_no_type, var->tok->str());
-            var->type = ty;
-        } else {
-            // Type checking
-            if (!var->is_type(ty))
-                error(assign->rhs, err_expected_type, TypeName[var->type->id], TypeName[ty->id]);
+        if (dest_id == NodeVar) {
+            Variable *var = (Variable *) assign->lhs;
+            if (isGlobal) var->addAttr(VarGlobal);
+            if (!var->type) {
+                if (ty->id == TypeVoid) error(assign->rhs, err_no_type, var->tok->str());
+                var->type = ty;
+            } else {
+                // Type checking
+                if (isGlobal && ty->id == TypeStruct && var->isType(TypePtr)) {
+                    var->type = var->type->data.type;
+                }
+                if (!var->isType(ty))
+                    error(assign->rhs, err_expected_type, TypeName[var->type->id], TypeName[ty->id]);
+            }
+        } else if (dest_id == NodeMemberAccess) {
+
         }
-        LOG() << var->tok->str() << " " << TypeName[var->type->id] << '\n';
         return ty;
     } else {
         return analyzeNodeType(node);
@@ -610,7 +618,6 @@ const Type * Parser::analyzeNodeType(Node *node) {
 
     switch (node->id)
     {
-    case NodeAssign: return addVarType(node);
     case NodeFnCall: {
         analyzeType(((FnCall *)node)->args);   // type-checking for args
         return ((FnCall*)node)->type->return_type;
@@ -680,6 +687,12 @@ const Type * Parser::analyzeNodeType(Node *node) {
     case NodeIf:
         analyzeNodeType(((If *)node)->cond);
         return analyzeType(((If *)node)->body);
+
+    case NodeDeclare:
+        isGlobal = true;
+        return ((TypedNode *)node)->type;
+
+    case NodeMemberAccess:
 
     case NodeNull:   return &nullTy;
     case NodeIdent:  return ((Identifier *)node)->var->type;
@@ -960,6 +973,7 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
     auto type_id = ty->id;
     Node head{};
     Node *cur = &head;
+    LOG() << tok->str() << " " << TypeName[type_id] << '\n';
     while (tok->next->id == TokenIdSlash) {
         if (type_id == TypeStruct) {
             if (!path) {
@@ -1218,16 +1232,34 @@ Node * Parser::parseCast(Token *tok, Token **rest) {
     return node;
 }
 
+Node * Parser::parseDeclare(Token *tok, Token **rest) {
+    auto node = newNode<TypedNode>(NodeDeclare, tok);
+    isDeclare = true;
+    node->type = parseType(tok->next, rest, false, true);
+    isDeclare = false;
+    if (node->type->id == TypeStructUnresolved)
+        resolveStruct((Type *)node->type, curCtx);
+
+    auto end = *rest;
+    while (tok->next < end) tok = tok->next;
+    *rest = tok;
+    return node;
+}
+
 Node * Parser::parseSizeOf(Token *tok, Token **rest) {
     tok = tok->next;
     auto node = newNode<Unary>(NodeSizeOf, tok);
-    auto ty = parseType(tok, rest, false, false, false);
+    isDeclare = true;
+    auto ty = parseType(tok, rest, false, true, false);
+    isDeclare = false;
 
     // @@ we have to do this because `rest` points to the token beyond end token
     if (ty) {
         auto end = *rest;
         while (tok->next < end) tok = tok->next;
         *rest = tok;
+
+        if (ty->id == TypeStructUnresolved) resolveStruct((Type *)ty, curCtx);
     }
 
     node->value = ty ? (Node *)ty : parseExpr(tok, rest);
@@ -1299,14 +1331,15 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
             tok = tok->next;
             expect(tok, TokenIdRParen, ')');
             break;
-        case TokenIdAny:    node = parseAny(tok, &tok); break;
-        case TokenIdAll:    node = parseAll(tok, &tok); break;
-        case TokenIdEither: node = parseEither(tok, &tok); break;
-        case TokenIdCase:   node = parseCase(tok, &tok); break;
-        case TokenIdSwitch: node = parseSwitch(tok, &tok); break;
-        case TokenIdAs:     node = parseCast(tok, &tok); break;
-        case TokenIdSize:   node = parseSizeOf(tok, &tok); break;
-        case TokenIdNull:   node = newNode<Node>(NodeNull, tok); break;
+        case TokenIdAny:      node = parseAny(tok, &tok); break;
+        case TokenIdAll:      node = parseAll(tok, &tok); break;
+        case TokenIdEither:   node = parseEither(tok, &tok); break;
+        case TokenIdCase:     node = parseCase(tok, &tok); break;
+        case TokenIdSwitch:   node = parseSwitch(tok, &tok); break;
+        case TokenIdAs:       node = parseCast(tok, &tok); break;
+        case TokenIdDeclare:  node = parseDeclare(tok, &tok); break;
+        case TokenIdSize:     node = parseSizeOf(tok, &tok); break;
+        case TokenIdNull:     node = newNode<Node>(NodeNull, tok); break;
         case TokenIdFunc:  // anonymous function
         case TokenIdAlias:
         default:
@@ -1328,6 +1361,7 @@ Node * Parser::parseAssignment(Token *tok, Token **rest) {
         is_set = true;
     } else if (tok->id == TokenIdPath) {
         node = parsePath(tok, rest, is_set);
+        tok = *rest;
     } else {
         node = parseExpr(tok, rest);
     }
@@ -1558,6 +1592,10 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
         // assignment or expression
         default:
             node = parseAssignment(tok, &tok);
+            if (node && node->id == NodeAssign) {
+                isGlobal = false;
+                addVarType(node);
+            }
             break;
         }
         tok = tok->next;

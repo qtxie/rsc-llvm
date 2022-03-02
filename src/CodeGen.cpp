@@ -295,17 +295,22 @@ void CodeGen::emitWhile(While *node) {
 }
 
 void CodeGen::handleThrow() {
-    auto if_bb = createBasicBlock("e.catched", afterCatchBB);
     auto after_if_bb = createBasicBlock("after.if", afterCatchBB);
+    auto catch_bb = createBasicBlock("catch", afterCatchBB);
+    auto rethrow_bb = createBasicBlock("rethrow");
     auto exception_val = in_main_func ? firstLocalVar : curFunc->getArg(0);
     llvm::Value *exception = builder->CreateLoad(exception_val);
-    llvm::Value *filter = in_catch ? catchFilter : llvm::ConstantInt::get(i32_ty, 0);
-    llvm::Value *cond = builder->CreateICmpSLE(exception, filter);
-    builder->CreateCondBr(cond, if_bb, after_if_bb);
+    auto zero = llvm::ConstantInt::get(i32_ty, 0);
+    builder->CreateCondBr(builder->CreateICmpEQ(exception, zero), after_if_bb, catch_bb);
 
-    auto saved_bb = curBB;
-    setCurrentBasicBlock(if_bb);
-    builder->CreateBr(afterCatchBB);
+    setCurrentBasicBlock(catch_bb);
+    llvm::Value *filter = in_catch ? catchFilter : zero; 
+    llvm::Value *cond = builder->CreateICmpSLE(exception, filter);
+    builder->CreateCondBr(cond, afterCatchBB, rethrow_bb);
+
+    setCurrentBasicBlock(rethrow_bb);
+    builder->CreateRetVoid();
+
     setCurrentBasicBlock(after_if_bb);
 }
 

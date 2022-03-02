@@ -1054,9 +1054,10 @@ Node * Parser::parseFnCall(FuncType *ftype, Function *fn, Token *tok, Token **re
     }
     call->args = head.next;
     auto caller = curCtx->func;
-    if (!caller->calls) caller->calls = new std::vector<FnCall *>;
-    caller->calls->push_back(call);
-
+    if (fn->id == TypeFunc) {
+        if (!caller->calls) caller->calls = new std::vector<FnCall *>;
+        caller->calls->push_back(call);
+    }
     *rest = tok;
     return call;
 }
@@ -1639,7 +1640,7 @@ Context * Parser::parse(Token *tok) {
     ctx->is_root = true;
     ctx->func = mainFunc;
     mainFunc->body.node = parseCodeBlock(tok, ctx);
-    //analyzeCalls(mainFunc);
+    analyzeCalls(mainFunc);
     return ctx;
 }
 

@@ -157,7 +157,6 @@ struct Variable : TypedNode {
     IrValue *ir;
     bool isType(const Type *ty) {return type->id == ty->id;}
     bool isType(NodeId id) {return type->id == id;}
-    bool isGlobal() {return static_cast<bool>(attrs & VarGlobal);}
     void addAttr(VarAttr attr) {
         attrs = static_cast<VarAttr>(attrs | attr);
     }
@@ -278,8 +277,7 @@ private:
     SmallVector<uint32_t> tids;  // detect struct circular reference
     SmallVector<Token *> import_libs;
 
-    bool isGlobal;
-    bool isDeclare;
+    bool isSizeOf;
     std::set<FuncType> funcTypeCache;
     SmallVector<std::tuple<Function*, FnCall*, bool>> unresolvedCalls;
     Token hiddenParamTok;
@@ -294,8 +292,7 @@ private:
 
 public:
     Parser(Compilation &c, CodeGen &_codegen) : Utils(c), codegen(_codegen), curTypeId(1000) {
-        isGlobal = false;
-        isDeclare = false;
+        isSizeOf = false;
         hiddenParamTok.id = TokenIdWord;
         hiddenParamTok.loc = "__r/s_throw_";
         hiddenParamTok.len = std::char_traits<char>::length(hiddenParamTok.loc);
@@ -334,6 +331,7 @@ private:
 
     char scanByte(const char **bp);
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false, bool error = true);
+    Node * parseInteger(Token *tok);
     Node * parseByte(Token *tok);
     Node * parseString(Token *tok);
     Node * parseAnyAll(Token *tok, Token **rest, NodeId id);
@@ -372,8 +370,10 @@ private:
     const Type * collectAlias(Token *tok, Token **rest) {
         return parseType(tok, rest, false, true);
     }
-    Node * collectDecl(Token *tok, Token **rest);
+    Node * collectDecl(Token *tok, Token **rest, bool is_func_ctx);
     Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = true, bool is_func_ctx = false);
+
+    Node * collectLocals(Context *ctx, Node **end);
 
     bool resolveStruct(Type *ty, Context *ctx);
     void resolveDeclarations(Context *ctx);
@@ -406,7 +406,7 @@ private:
         return ptr;
     }
 
-    Pointer *newPtrNode(Node *val, Token *tok) {
+    Pointer * newPtrNode(Node *val, Token *tok) {
         auto ptr = newNode<Pointer>(NodePtr, tok);
         ptr->type = newPtrType(((TypedNode *)val)->type);
         ptr->value = val;

@@ -24,6 +24,7 @@ DIAG(err_no_loop, Error, "{0} used with no loop")
 DIAG(err_no_type, Error, "unable to determine a type for {0}")
 DIAG(err_conv_type, Error, "unable to cast {0} to {1}")
 DIAG(err_no_implicit_conv, Error, "no explicit conversion from {0} to {1}")
+DIAG(err_str_index, Error, "attempt to use string indexing with a non-integer! value")
 
 DIAG(err_float_overflow, Error, "float overflow")
 DIAG(err_int_overflow, Error, "integer overflow")

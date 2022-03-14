@@ -65,6 +65,14 @@ llvm::Value * CodeGen::readStructMember(Path *path) {
     return builder->CreateLoad(getStructMemberPtr(path));
 }
 
+llvm::Value * CodeGen::readPointerValue(Path *path) {
+    return builder->CreateLoad(getElementPtr(path));
+}
+
+llvm::Value * CodeGen::getElementPtr(Path *path) {
+    return nullptr;
+}
+
 llvm::Value * CodeGen::getStructMemberPtr(Path *path) {
     assert(path->first->id == NodeVar);
     
@@ -72,16 +80,52 @@ llvm::Value * CodeGen::getStructMemberPtr(Path *path) {
     indices.push_back(llvm::ConstantInt::get(i32_ty, 0));
 
     Variable *var = (Variable *)path->first;
+LOG() << var->tok->str() << ' ' << TypeName[var->type->id] << '\n';
+    llvm::Type *ty = llvmType(var);
+    llvm::Value *ptr;
+    if (var->type->id == TypeStruct) {
+        ty = ty->getPointerTo();
+        ptr = var->ir;
+    } else {
+        ptr = readVariable(var);
+    }
+    ty = ty->getPointerElementType();
 
     Unary *node = (Unary *)path->value;
+    NodeId type_id;
     while (node) {
-        Member *m = (Member *)node->value;
-        indices.push_back(llvm::ConstantInt::get(i32_ty, m->idx));
+        LOG() << node->tok->str() << '\n';
+
+        type_id = node->id;
+        if (type_id == NodeMemberAccess) {
+            Member *m = (Member *)node->value;
+            type_id = m->type->id;
+            indices.push_back(llvm::ConstantInt::get(i32_ty, m->idx));
+        } else if (type_id == NodeVar) {
+            auto idx = readVariable((Variable *)node);
+            idx = builder->CreateNSWSub(idx, llvm::ConstantInt::get(i32_ty, 1));
+            indices.push_back(idx);
+        } else if (type_id == TypeInt) {
+            Type *t = (Type *)node;
+            indices.push_back(llvm::ConstantInt::get(i32_ty, t->data.value - 1));
+        }
+
+        if (type_id == TypeCStr || type_id == TypePtr) {
+            ptr = builder->CreateGEP(ty, ptr, indices);
+            if (node->next) {
+                ptr = builder->CreateLoad(ptr);
+                ty = ptr->getType()->getScalarType()->getPointerElementType();
+                indices.clear();
+                if (node->next->id == NodeMemberAccess)
+                    indices.push_back(llvm::ConstantInt::get(i32_ty, 0));
+            } else {
+                return ptr;
+            }
+        }
         node = (Unary *)node->next;
     };
 
-    llvm::StructType *st = ((Struct *)var->type)->ir;
-    return builder->CreateGEP(st->getPointerTo()->getPointerElementType(), var->ir, indices);
+    return builder->CreateGEP(ty, ptr, indices);
 }
 
 llvm::Value * CodeGen::readVariable(Variable *var) {
@@ -99,11 +143,11 @@ llvm::Value * CodeGen::getPointer(Node *node) {
     llvm_unreachable("");
 }
 
-llvm::GlobalVariable * CodeGen::emitGlobalVar(Variable *var) {
+llvm::GlobalVariable * CodeGen::emitGlobalVar(Variable *var, const Type *ty) {
     auto v = new llvm::GlobalVariable(
-        *M, llvmType(var->type), false, GlobalValue::PrivateLinkage, nullptr, var->tok->str());
+        *M, llvmType(ty), false, GlobalValue::PrivateLinkage, nullptr, var->tok->str());
     var->ir = v;
-    var->attrs = static_cast<VarAttr>(var->attrs | VarGlobal);
+    var->addAttr(VarGlobal);
     LOG() << var << '\n';
     return v;
 }
@@ -482,8 +526,21 @@ llvm::Value * CodeGen::emitSizeOf(Unary *node) {
     return llvm::ConstantInt::get(i64_ty, sz);
 }
 
+llvm::Value * CodeGen::emitDeclare(TypedNode *node) {
+    auto ty = node->type;
+    if (ty->id == TypePtr && ty->data.type->id == TypeStruct) {
+        ty = ty->data.type;
+    }
+    auto type = llvmType(ty);
+    auto var = new llvm::GlobalVariable(*M, type, false, 
+        GlobalValue::PrivateLinkage, nullptr, node->tok->str());
+    var->setInitializer(llvm::ConstantAggregateZero::get(type));
+    return var;
+}
+
 llvm::Value * CodeGen::emitExpr(Node *node) {
     LOG() << NodeName[node->id] << '\n';
+    if (node->tok) LOG() << node->tok->str() << '\n';
 
     llvm::Value *val = nullptr;
     switch (node->id)
@@ -503,8 +560,9 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     case TypeDouble:       val = getConstantFloat(node); break;
     case TypeCStr:         val = createCString(node); break;
     case NodeMemberAccess: val = readStructMember((Path *)node); break;
+    case NodePtrIdx:       val = readPointerValue((Path *)node); break;
     case NodeSizeOf:       val = emitSizeOf((Unary *)node); break;
-    case NodeDeclare:      break;
+    case NodeDeclare:      val = emitDeclare((TypedNode *)node); break;
     default:               val = emitBinOp(node); break;
     }
     curVal = val;
@@ -516,18 +574,16 @@ llvm::Value * CodeGen::emitAssignment(Assignment *node) {
     inAssign = true;
 
     auto dest_id = node->lhs->id;
-    bool is_global;
     llvm::Value *dest;
     if (dest_id == NodeVar) {
         Variable *left = (Variable *)node->lhs;
-        is_global = left->isGlobal();
         dest = left->ir;
     } else if (dest_id == NodeMemberAccess) {   // set struct memeber
         Path *path = (Path *)node->lhs;
-        is_global = false;
         dest = getStructMemberPtr(path);
     }
     resultVar = dest;
+    assert(dest != nullptr);
 
     llvm::Value *val = nullptr;
     if (node->rhs->id == NodeAssign) {
@@ -536,16 +592,7 @@ llvm::Value * CodeGen::emitAssignment(Assignment *node) {
         val = emitExpr(node->rhs);
     }
 
-    if (is_global || dest == nullptr) {
-        Variable *left = (Variable *)node->lhs;
-        llvm::GlobalVariable *var = dest ? llvm::cast<llvm::GlobalVariable>(dest) : emitGlobalVar(left);
-        if (val && llvm::isa<llvm::Constant>(val))
-            var->setInitializer(llvm::cast<llvm::Constant>(val));
-        else
-            var->setInitializer(llvm::ConstantAggregateZero::get(llvmType(left->type)));
-    } else {
-        builder->CreateStore(val, dest);
-    }
+    builder->CreateStore(val, dest);
 
     inAssign = in_assign;
     return val;
@@ -662,10 +709,7 @@ void CodeGen::emitFunc(Function *fn) {
         Node *cur = &head;
         while (node) {
             Variable *var = (Variable *) node;
-            if (!var->isGlobal())
-                var->ir = builder->CreateAlloca(llvmType(var->type));
-            else
-                emitGlobalVar(var);
+            var->ir = builder->CreateAlloca(llvmType(var->type));
             cur = cur->next = var;
             node = node->next;
         }

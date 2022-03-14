@@ -51,12 +51,15 @@ public:
     ~CodeGen() {delete M;}
     CodeGen(Compilation &&) = delete;  // prevents rvalue binding
 
+    llvm::Value * readPointerValue(Path *node);
+    llvm::Value * getElementPtr(Path *node);
     llvm::Value * readStructMember(Path *node);
     llvm::Value * getStructMemberPtr(Path *node);
     llvm::Value * readVariable(Variable *var);
     llvm::Value * getPointer(Node *node);
 
     llvm::Value * emitCode(Node *node);
+    llvm::Value * emitDeclare(TypedNode *node);
     llvm::Value * emitSizeOf(Unary *node);
     llvm::Value * emitCast(Cast *node);
     llvm::Value * emitAll(Any *node);
@@ -68,7 +71,7 @@ public:
     llvm::Value * emitBinOp(Node *node);
     llvm::Value * emitExpr(Node *node);
     llvm::Value * emitAssignment(Assignment *node);
-    llvm::GlobalVariable * emitGlobalVar(Variable *var);
+    llvm::GlobalVariable * emitGlobalVar(Variable *var, const Type *ty);
 
     void emitBreak(Node *node);
     void emitContinue(Node *node);

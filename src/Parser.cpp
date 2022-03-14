@@ -184,7 +184,7 @@ constexpr auto genDatatypes()
 {
     std::array<std::pair<StringRef, Type>, 6> datatypes = {{
         {"byte!", Type{TypeByte, false, 1, 1, nullptr, nullptr, TypeByte}},
-        {"c-string!", Type{TypePtr, false, 8, 8, nullptr, nullptr, TypePtr}},
+        {"c-string!", Type{TypeCStr, false, 8, 8, nullptr, nullptr, TypeCStr}},
         {"float!", Type{TypeDouble, false, 8, 8, nullptr, nullptr, TypeDouble}},
         {"float32!", Type{TypeFloat, false, 4, 4, nullptr, nullptr, TypeFloat}},
         {"integer!", Type{TypeInt, true, 4, 4, nullptr, nullptr, TypeInt}},
@@ -221,7 +221,7 @@ const Type * Parser::parseType(Token *tok, Token **rest, bool is_block, bool is_
         if (type->id == TypeStructUnresolved && !is_collect && tok->id == TokenIdWord && tok->equals("value")) { // struct value
             resolveStruct((Type *)type, ctx);
             tok = tok->next;
-        } else if ((type->id == TypeStruct || type->id == TypeStructUnresolved) && !isDeclare) {
+        } else if ((type->id == TypeStruct || type->id == TypeStructUnresolved) && !isSizeOf) {
             type = newPtrType(type);
         }
     } else {     // anonymous type
@@ -401,7 +401,7 @@ Type * Parser::parseStruct(Token *tok, Token **rest, bool is_collect) {
 }
 
 // declaration = qualified-word: (function-decl | context-decl | alias-decl)
-Node * Parser::collectDecl(Token *tok, Token **rest) {
+Node * Parser::collectDecl(Token *tok, Token **rest, bool is_func_ctx) {
     assert(tok->id == TokenIdSetWord || tok->id == TokenIdSetColon);
 
     *rest = tok;
@@ -446,8 +446,12 @@ LOG() << tok << '\n';
     if (name->id == TokenIdSetWord) {
         Context *ctx;
         auto node = findVar(name, &ctx);
-        if (!node) node = addVar(curCtx, name);
-        else if (node->id != NodeVar) comp.error(name, err_symbol_declared, name->str());
+        if (!node) {
+            if (is_func_ctx) comp.error(name, err_undeclared_name, name->str());
+            node = addVar(curCtx, name);
+        } else if (node->id != NodeVar) {
+            comp.error(name, err_symbol_declared, name->str());
+        }
     }
 
     // invalid cases
@@ -529,6 +533,24 @@ bool Parser::resolveStruct(Type *ty, Context *ctx) {
     return false;
 }
 
+Node * Parser::collectLocals(Context *ctx, Node **end) {
+    curCtx = ctx;
+    Node head{};
+    Node *cur = &head;
+    for (auto const &val : ctx->decls) {
+        Variable *var = (Variable *)val.second;
+        if (var->id == NodeVar) {
+            cur = cur->next = var;
+        } else if (var->id == NodeContext) {
+            cur->next = collectLocals((Context *)var, end);
+            cur = *end;
+            curCtx = ctx;
+        }
+    }
+    *end = cur;
+    return head.next;
+}
+
 void Parser::resolveDeclarations(Context *ctx) {
     curCtx = ctx;
     for (auto const &val : ctx->decls) {
@@ -563,15 +585,11 @@ const Type * Parser::addVarType(Node *node) {
         const Type *ty = addVarType(assign->rhs);
         if (dest_id == NodeVar) {
             Variable *var = (Variable *) assign->lhs;
-            if (isGlobal) var->addAttr(VarGlobal);
             if (!var->type) {
                 if (ty->id == TypeVoid) error(assign->rhs, err_no_type, var->tok->str());
                 var->type = ty;
             } else {
                 // Type checking
-                if (isGlobal && ty->id == TypeStruct && var->isType(TypePtr)) {
-                    var->type = var->type->data.type;
-                }
                 if (!var->isType(ty))
                     error(assign->rhs, err_expected_type, TypeName[var->type->id], TypeName[ty->id]);
             }
@@ -689,7 +707,6 @@ const Type * Parser::analyzeNodeType(Node *node) {
         return analyzeType(((If *)node)->body);
 
     case NodeDeclare:
-        isGlobal = true;
         return ((TypedNode *)node)->type;
 
     case NodeMemberAccess:
@@ -865,7 +882,7 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block, boo
             break;
         case TokenIdSetWord:
         case TokenIdSetColon:
-            node = collectDecl(tok, &rest);
+            node = collectDecl(tok, &rest, is_func_ctx);
             if (node) {
                 if (cur->id == TokenIdPath || tok->id == TokenIdSetColon)
                     comp.error(tok->next, err_cannot_declared, tok->next->str());
@@ -975,6 +992,10 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
     Node *cur = &head;
     LOG() << tok->str() << " " << TypeName[type_id] << '\n';
     while (tok->next->id == TokenIdSlash) {
+        if (type_id == TypePtr && ty->data.type->id == TypeStruct) {
+            type_id = TypeStruct;
+            ty = ty->data.type;
+        }
         if (type_id == TypeStruct) {
             if (!path) {
                 path = newNode<Path>(NodeMemberAccess, tok);
@@ -986,8 +1007,34 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
             Unary *node = (Unary *)cur;
             ty = ((Member *)node->value)->type;
             type_id = ty->id;
-        } else if (type_id == TypePtr) {
+        } else if (type_id == TypeCStr || type_id == TypePtr) {
+            if (!path) {
+                path = newNode<Path>(NodePtrIdx, tok);
+                path->first = var;
+            }
+            tok = tok->next->next;
+            if (tok->id == TokenIdInteger) {
+                 cur = cur->next = parseInteger(tok);
+            } else if (tok->id == TokenIdWord || tok->id == TokenIdSetWord) {
+                if (tok->equals("value")) {
+                    Type *idx = newNode<Type>(TypeInt, tok);
+                    idx->data.value = 1;
+                    cur = cur->next = idx;
+                } else {
+                    Context *ctx = nullptr;
+                    cur = cur->next = findVar(tok, &ctx);
+                }
+            } else {
+                comp.error(tok, err_str_index);
+            }
 
+            // next element's type
+            if (type_id == TypeCStr) {
+                type_id = TypeByte;
+            } else {
+                ty = ty->data.type;
+                type_id = ty->id;
+            }
         } else if (type_id == TypeArray) {
 
         } else {
@@ -1184,6 +1231,13 @@ char Parser::scanByte(const char **bp) {
 	return n;
 }
 
+Node * Parser::parseInteger(Token *tok) {
+    Type *ty = newNode<Type>(TypeInt, tok);
+    if (tok->toInteger(ty->data.value))
+        comp.error(tok, err_int_overflow);
+    return ty;
+}
+
 Node * Parser::parseByte(Token *tok) {
     auto p = &(tok->loc);
     auto chr = scanByte(p);
@@ -1235,9 +1289,7 @@ Node * Parser::parseCast(Token *tok, Token **rest) {
 
 Node * Parser::parseDeclare(Token *tok, Token **rest) {
     auto node = newNode<TypedNode>(NodeDeclare, tok);
-    isDeclare = true;
     node->type = parseType(tok->next, rest, false, true);
-    isDeclare = false;
     if (node->type->id == TypeStructUnresolved)
         resolveStruct((Type *)node->type, curCtx);
 
@@ -1250,9 +1302,9 @@ Node * Parser::parseDeclare(Token *tok, Token **rest) {
 Node * Parser::parseSizeOf(Token *tok, Token **rest) {
     tok = tok->next;
     auto node = newNode<Unary>(NodeSizeOf, tok);
-    isDeclare = true;
+    isSizeOf = true;
     auto ty = parseType(tok, rest, false, true, false);
-    isDeclare = false;
+    isSizeOf = false;
 
     // @@ we have to do this because `rest` points to the token beyond end token
     if (ty) {
@@ -1310,10 +1362,7 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
             break;
         case TokenIdInteger:
         case TokenIdHex:
-            ty = newNode<Type>(TypeInt, tok);
-            node = ty;
-            if (tok->toInteger(ty->data.value))
-                comp.error(tok, err_int_overflow);
+            node = parseInteger(tok);
             break;
         case TokenIdFloat:
             ty = newNode<Type>(TypeDouble, tok);
@@ -1594,7 +1643,6 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
         default:
             node = parseAssignment(tok, &tok);
             if (node && node->id == NodeAssign) {
-                isGlobal = false;
                 addVarType(node);
             }
             break;
@@ -1640,6 +1688,8 @@ Context * Parser::parse(Token *tok) {
     ctx->is_root = true;
     ctx->func = mainFunc;
     mainFunc->body.node = parseCodeBlock(tok, ctx);
+    Node *end = nullptr;
+    mainFunc->locals = collectLocals(ctx, &end);
     analyzeCalls(mainFunc);
     return ctx;
 }

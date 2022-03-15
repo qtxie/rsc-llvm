@@ -443,17 +443,6 @@ LOG() << tok << '\n';
         return ctx;
     }
 
-    if (name->id == TokenIdSetWord) {
-        Context *ctx;
-        auto node = findVar(name, &ctx);
-        if (!node) {
-            if (is_func_ctx) comp.error(name, err_undeclared_name, name->str());
-            node = addVar(curCtx, name);
-        } else if (node->id != NodeVar) {
-            comp.error(name, err_symbol_declared, name->str());
-        }
-    }
-
     // invalid cases
     if (tok->id == TokenIdSlash)
         comp.error(name, err_invalid_token);
@@ -1402,12 +1391,19 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
 }
 
 // assignment = lh-side+ expression
-Node * Parser::parseAssignment(Token *tok, Token **rest) {
+Node * Parser::parseAssignment(Token *tok, Token **rest, bool is_in_func) {
     Context *ctx = nullptr;
     Node *node = nullptr;
     bool is_set = false;
     if (tok->id == TokenIdSetWord) {
+        Context *ctx;
         node = findVar(tok, &ctx);
+        if (!node) {
+            if (is_in_func) comp.error(tok, err_undeclared_name, tok->str());
+            node = addVar(curCtx, tok);
+        } else if (node->id != NodeVar) {
+            comp.error(tok, err_symbol_declared, tok->str());
+        }
         is_set = true;
     } else if (tok->id == TokenIdPath) {
         node = parsePath(tok, rest, is_set);
@@ -1417,7 +1413,7 @@ Node * Parser::parseAssignment(Token *tok, Token **rest) {
     }
 
     if (is_set)
-        node = newNode<Assignment>(NodeAssign, node, parseAssignment(tok->next, rest));
+        node = newNode<Assignment>(NodeAssign, node, parseAssignment(tok->next, rest, is_in_func));
     return node;
 }
 
@@ -1641,7 +1637,7 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
             }
         // assignment or expression
         default:
-            node = parseAssignment(tok, &tok);
+            node = parseAssignment(tok, &tok, is_block);
             if (node && node->id == NodeAssign) {
                 addVarType(node);
             }

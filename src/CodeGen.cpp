@@ -62,7 +62,7 @@ CodeGen::CodeGen(Compilation &c) : comp(c) {
 }
 
 llvm::Value * CodeGen::readStructMember(Path *path) {
-    return builder->CreateLoad(getStructMemberPtr(path));
+    return builder->CreateLoad(getElementPtr(path));
 }
 
 llvm::Value * CodeGen::readPointerValue(Path *path) {
@@ -70,17 +70,15 @@ llvm::Value * CodeGen::readPointerValue(Path *path) {
 }
 
 llvm::Value * CodeGen::getElementPtr(Path *path) {
-    return nullptr;
-}
-
-llvm::Value * CodeGen::getStructMemberPtr(Path *path) {
     assert(path->first->id == NodeVar);
     
     llvm::SmallVector<llvm::Value *> indices;
-    indices.push_back(llvm::ConstantInt::get(i32_ty, 0));
+    if (path->id == NodeMemberAccess)
+        indices.push_back(llvm::ConstantInt::get(i32_ty, 0));
 
     Variable *var = (Variable *)path->first;
-LOG() << var->tok->str() << ' ' << TypeName[var->type->id] << '\n';
+    LOG() << var->tok->str() << ' ' << TypeName[var->type->id] << '\n';
+
     llvm::Type *ty = llvmType(var);
     llvm::Value *ptr;
     if (var->type->id == TypeStruct) {
@@ -495,9 +493,13 @@ llvm::Value * CodeGen::emitAny(Any *node) {
     return builder->CreateLoad(tempVarBool);
 }
 
-inline llvm::Constant * CodeGen::createCString(Node *node) {
+llvm::Constant * CodeGen::createCString(Node *node) {
     const char *data = ((Type *)node)->data.str;
-    return builder->CreateGlobalStringPtr(StringRef(data, node->tok->len), "", 0, M);
+    auto str = builder->CreateGlobalString(StringRef(data, node->tok->len), "", 0, M);
+    str->setConstant(false);
+    llvm::Constant *Zero = llvm::ConstantInt::get(i32_ty, 0);
+    llvm::Constant *Indices[] = {Zero, Zero};
+    return llvm::ConstantExpr::getInBoundsGetElementPtr(str->getValueType(), str, Indices);
 }
 
 llvm::Value * CodeGen::emitCast(Cast *node) {
@@ -578,9 +580,9 @@ llvm::Value * CodeGen::emitAssignment(Assignment *node) {
     if (dest_id == NodeVar) {
         Variable *left = (Variable *)node->lhs;
         dest = left->ir;
-    } else if (dest_id == NodeMemberAccess) {   // set struct memeber
+    } else if (dest_id == NodeMemberAccess || dest_id == NodePtrIdx) {   // set-path
         Path *path = (Path *)node->lhs;
-        dest = getStructMemberPtr(path);
+        dest = getElementPtr(path);
     }
     resultVar = dest;
     assert(dest != nullptr);
@@ -709,7 +711,11 @@ void CodeGen::emitFunc(Function *fn) {
         Node *cur = &head;
         while (node) {
             Variable *var = (Variable *) node;
-            var->ir = builder->CreateAlloca(llvmType(var->type));
+            if (var->type) {
+                var->ir = builder->CreateAlloca(llvmType(var->type));
+            } else {
+                error(var, warn_unused_var);
+            }
             cur = cur->next = var;
             node = node->next;
         }

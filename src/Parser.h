@@ -350,7 +350,7 @@ private:
     Node * parseDeclare(Token *tok, Token **rest);
     Node * parseSizeOf(Token *tok, Token **rest);
     Node * parseFnCall(FuncType *ftype, Function *fn, Token *tok, Token **rest);
-    Node * parseAssignment(Token *tok, Token **rest);
+    Node * parseAssignment(Token *tok, Token **rest, bool is_in_func);
     Node * parseExpr(Token *tok, Token **rest);
     Node * parseCast(Token *tok, Token **rest);
     Token * parseLocal(Token *tok, Function *func);

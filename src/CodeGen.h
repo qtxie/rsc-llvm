@@ -54,7 +54,6 @@ public:
     llvm::Value * readPointerValue(Path *node);
     llvm::Value * getElementPtr(Path *node);
     llvm::Value * readStructMember(Path *node);
-    llvm::Value * getStructMemberPtr(Path *node);
     llvm::Value * readVariable(Variable *var);
     llvm::Value * getPointer(Node *node);
 

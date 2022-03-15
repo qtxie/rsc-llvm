@@ -10,6 +10,7 @@ DIAG(err_unknown_directive, Error, "unknown directive")
 DIAG(err_invalid_utf8, Error, "invalid UTF-8 sequence")
 
 DIAG(warn_macro_redefined, Warning, "macro in R/S is redefined")
+DIAG(warn_unused_var, Warning, "variable is unused")
 
 DIAG(err_circular_ref, Error, "cirular reference is not allowed")
 DIAG(err_dangling, Error, "dangling {0}")

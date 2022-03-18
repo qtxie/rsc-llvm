@@ -228,7 +228,7 @@ const Type * Parser::parseType(Token *tok, Token **rest, bool is_block, bool is_
         if (tok->equals("struct!")) {
             type = parseStruct(tok, &tok, is_collect);
         } else if (tok->equals("function!")) {
-            auto fn = newNode<FuncType>(TypeFuncTy);
+            auto fn = newNode<FuncType>(TypeFuncTy, tok);
             LOG() << fn << '\n';
             tok = parseFuncSpec(tok->next, fn, nullptr, is_collect);
             type = fn;
@@ -297,6 +297,7 @@ Token *Parser::parseFuncSpec(Token *tok, FuncType *ftype, Function *func, bool i
 
     if (func) func->id = TypeFunc;
     ftype->spec = nullptr;
+    ftype->return_type = &voidTy;
     tok = skip(tok, TokenIdLBracket, '[');
     if (consume(tok, TokenIdRBracket, &tok))
         return tok;
@@ -308,6 +309,7 @@ Token *Parser::parseFuncSpec(Token *tok, FuncType *ftype, Function *func, bool i
             using namespace llvm;
             tok = tok->next;
             if (tok->equals("variadic"))     attrs |= FuncVariadic;
+            else if (tok->equals("typed"))   attrs = attrs | FuncVariadic | FuncTyped;
             else if (tok->equals("cdecl"))   attrs = attrs & (~FuncCallConv) | FuncCdecl;
             else if (tok->equals("stdcall")) attrs = attrs & (~FuncCallConv) | FuncStdcall;
             else if (tok->id == TokenIdRBracket) break;
@@ -368,13 +370,13 @@ Node *Parser::parseMembers(Token *tok, Token **rest) {
             member->idx = idx++;
             cur = cur->next = member;
         } else if (tok->id == TokenIdRBracket) {
-            tok = tok->next;
             break;
         } else {
             comp.error(tok, err_invalid_struct, tok->str());
         }
     }
     if (!idx) comp.error(tok, err_invalid_struct, tok->str());  // empty struct
+    *rest = tok->next;
     return head.next;
 }
 
@@ -390,9 +392,9 @@ Type * Parser::parseStruct(Token *tok, Token **rest, bool is_collect) {
         return st;
     }
 
-    skipBlock(tok, rest);
-    if ((*rest)->id == TokenIdWord && (*rest)->equals("value")) {
-        st->data.member = parseMembers(tok, &tok);
+    st->data.member = parseMembers(tok, &tok);
+    *rest = tok;
+    if (tok->id == TokenIdWord && tok->equals("value")) {
         *rest = tok->next;  // skip token "value"
         return st;
     } else {
@@ -595,8 +597,8 @@ const Type * Parser::analyzeMathType(BinaryOp *bin) {
     auto rhs = bin->rhs;
     auto lhs_ty = analyzeNodeType(bin->lhs);
     auto rhs_ty = analyzeNodeType(rhs);
-    if (lhs_ty->id == TypePtr) {
-        if (rhs_ty->id != TypeInt && rhs_ty->id != TypePtr)
+    if (lhs_ty->id == TypeByte || lhs_ty->id == TypePtr || lhs_ty->id == TypeCStr) {
+        if (rhs_ty->id != TypeInt && rhs_ty->id != lhs_ty->id)
             error(rhs, err_conv_type, TypeName[rhs_ty->id], TypeName[TypePtr]);
     } else {
         auto result = TypeConv[rhs_ty->id][lhs_ty->id];
@@ -613,9 +615,28 @@ const Type * Parser::analyzeMathType(BinaryOp *bin) {
         if (msg_id != note_no_error)
             error(rhs, msg_id, TypeName[rhs_ty->id], TypeName[lhs_ty->id]);
     }
-    LOG() << bin << ' ' << NodeName[bin->id] << " " << TypeName[lhs_ty->id] << '\n';
     bin->type = lhs_ty;
     return lhs_ty;
+}
+
+const Type * Parser::getPathType(Path *path) {
+    Variable *var = (Variable *)path->first;
+    const Type *base_ty = var->type;
+
+    Unary *node = (Unary *)path->value;
+    while (node) {
+        auto type_id = node->id;
+        if (type_id == NodeMemberAccess) {
+            Member *m = (Member *)node->value;
+            base_ty = m->type;
+        } else if (type_id == NodeVar || type_id == TypeInt) {
+            if (base_ty->id == TypeCStr) base_ty = &byteTy;
+            else if (base_ty->id == TypePtr) base_ty = base_ty->data.type;
+            else error(node, err_invalid_path);
+        }
+        node = (Unary *)node->next;
+    };
+    return base_ty;
 }
 
 const Type * Parser::analyzeNodeType(Node *node) {
@@ -645,7 +666,7 @@ const Type * Parser::analyzeNodeType(Node *node) {
     case NodeLess:      
     case NodeLessEq:    
     case NodeGreater:   
-    case NodeGreaterEq: 
+    case NodeGreaterEq: return &boolTy;
     case NodeAnd:       
     case NodeOr:        
     case NodeXor:       
@@ -695,10 +716,17 @@ const Type * Parser::analyzeNodeType(Node *node) {
         analyzeNodeType(((If *)node)->cond);
         return analyzeType(((If *)node)->body);
 
+    case NodeMemberAccess: return getPathType((Path *)node);
+    case NodePtrIdx: {
+        Variable *var = (Variable *)((Path *)node)->first;
+        if (var->type->id == TypeCStr) return &byteTy;
+        else return var->type->data.type;
+    }
     case NodeDeclare:
         return ((TypedNode *)node)->type;
 
-    case NodeMemberAccess:
+    case NodeNot:    return &boolTy;
+    case NodeSizeOf: return &uintTy;
 
     case NodeNull:   return &nullTy;
     case NodeIdent:  return ((Identifier *)node)->var->type;
@@ -1073,7 +1101,7 @@ Node * Parser::parseFnCall(FuncType *ftype, Function *fn, Token *tok, Token **re
             tok = tok->next;
             do {
                 auto arg = parseExpr(tok->next, &tok);
-                cur = cur->next = arg; //checkArgType(arg, (Type *)param);
+                cur = cur->next = arg;
             } while (tok->next->id != TokenIdRBracket);
             tok = tok->next;
         } else {
@@ -1220,6 +1248,12 @@ char Parser::scanByte(const char **bp) {
 	return n;
 }
 
+Node * Parser::parseBool(Token *tok) {
+    Type *ty = newNode<Type>(TypeBool, tok);
+    ty->data.value = tok->id == TokenIdTrue ? 1 : 0;
+    return ty;
+}
+
 Node * Parser::parseInteger(Token *tok) {
     Type *ty = newNode<Type>(TypeInt, tok);
     if (tok->toInteger(ty->data.value))
@@ -1288,6 +1322,13 @@ Node * Parser::parseDeclare(Token *tok, Token **rest) {
     return node;
 }
 
+Node * Parser::parseNot(Token *tok, Token **rest) {
+    tok = tok->next;
+    auto node = newNode<Unary>(NodeNot, tok);
+    node->value = parseExpr(tok, rest);
+    return node;
+}
+
 Node * Parser::parseSizeOf(Token *tok, Token **rest) {
     tok = tok->next;
     auto node = newNode<Unary>(NodeSizeOf, tok);
@@ -1298,7 +1339,10 @@ Node * Parser::parseSizeOf(Token *tok, Token **rest) {
     // @@ we have to do this because `rest` points to the token beyond end token
     if (ty) {
         auto end = *rest;
-        while (tok->next < end) tok = tok->next;
+
+        while (tok->next != end) {
+            tok = tok->next;
+        }
         *rest = tok;
 
         if (ty->id == TypeStructUnresolved) resolveStruct((Type *)ty, curCtx);
@@ -1365,6 +1409,10 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
         case TokenIdString:
             node = parseString(tok);
             break;
+        case TokenIdTrue:
+        case TokenIdFalse:
+            node = parseBool(tok);
+            break;
         case TokenIdLParen:
             node = parseExpr(tok->next, &tok);
             tok = tok->next;
@@ -1378,6 +1426,7 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
         case TokenIdAs:       node = parseCast(tok, &tok); break;
         case TokenIdDeclare:  node = parseDeclare(tok, &tok); break;
         case TokenIdSize:     node = parseSizeOf(tok, &tok); break;
+        case TokenIdNot:      node = parseNot(tok, &tok); break;
         case TokenIdNull:     node = newNode<Node>(NodeNull, tok); break;
         case TokenIdFunc:  // anonymous function
         case TokenIdAlias:
@@ -1392,6 +1441,7 @@ Node * Parser::parseExpr(Token *tok, Token **rest) {
 
 // assignment = lh-side+ expression
 Node * Parser::parseAssignment(Token *tok, Token **rest, bool is_in_func) {
+    LOG() << tok->str() << '\n';
     Context *ctx = nullptr;
     Node *node = nullptr;
     bool is_set = false;
@@ -1585,12 +1635,13 @@ Node * Parser::parseCatch(Token *tok, Token **rest) {
     return node;
 }
 
-Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) {
+Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_func_body, bool is_block) {
     if (is_block) tok = skip(tok, TokenIdLBracket, '[');
     curCtx = ctx;
     Node head{};
     Node *cur = &head;
     while (tok->id != TokenIdEof) {
+        if (tok->loc) LOG() << tok->str() << '\n';
         Node *node = nullptr;
         switch (tok->id)
         {
@@ -1624,9 +1675,12 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
         case TokenIdSetWord:
             switch (tok->next->id)
             {
-            case TokenIdContext:
-                node = parseCode(tok->next->next, &tok, findContext(tok));
+            case TokenIdContext: {
+                Context *new_ctx = findContext(tok);
+                new_ctx->func = ctx->func;
+                node = parseCode(tok->next->next, &tok, new_ctx, false);
                 curCtx = ctx;
+                }
                 break;
             case TokenIdFunc:   // already handled in collect phase
             case TokenIdAlias:
@@ -1637,7 +1691,8 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_block) 
             }
         // assignment or expression
         default:
-            node = parseAssignment(tok, &tok, is_block);
+            node = parseAssignment(tok, &tok, is_func_body);
+            LOG() << "parseassign: " << tok->str() << '\n';
             if (node && node->id == NodeAssign) {
                 addVarType(node);
             }
@@ -1662,17 +1717,23 @@ Node * Parser::parseCodeBlock(Token *tok, Context *ctx, bool is_func_body) {
     // resolve struct and function spec
     resolveDeclarations(ctx);
 
-    parseFunctions(ctx);
-
     LOG() << "parseCode start\n";
-    Node *ast = parseCode(tok, &tok, ctx, is_func_body);
+    Node *ast = parseCode(tok, &tok, ctx, is_func_body, is_func_body);
     LOG() << "parseCode end\n";
 
+    if (!is_func_body) {
+        Node *end = nullptr;
+        ctx->func->locals = collectLocals(ctx, &end);
+    }
+
     dumpAst(ast);
+
+    parseFunctions(ctx);
 
     curCtx = ctx;
 
     analyzeType(ast);
+
 
     LOG.unindent(); LOG() << "end\n";
     return ast;
@@ -1681,11 +1742,10 @@ Node * Parser::parseCodeBlock(Token *tok, Context *ctx, bool is_func_body) {
 Context * Parser::parse(Token *tok) {
     Context *ctx = newContext(tok);
     Function *mainFunc = newFunction(tok);
+    mainFunc->type->return_type = &voidTy;
     ctx->is_root = true;
     ctx->func = mainFunc;
     mainFunc->body.node = parseCodeBlock(tok, ctx);
-    Node *end = nullptr;
-    mainFunc->locals = collectLocals(ctx, &end);
     analyzeCalls(mainFunc);
     return ctx;
 }

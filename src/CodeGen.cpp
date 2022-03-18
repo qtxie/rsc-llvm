@@ -386,6 +386,32 @@ llvm::Value * CodeGen::emitCall(FnCall *call) {
     return call_inst;
 }
 
+llvm::Value * CodeGen::emitBinOpInt(NodeId op, llvm::Value *left, llvm::Value *right) {
+    switch (op)
+    {
+    case NodeAdd:        return builder->CreateNSWAdd(left, right);
+    case NodeSub:        return builder->CreateNSWSub(left, right);
+    case NodeMul:        return builder->CreateNSWMul(left, right);
+    case NodeDiv:        return builder->CreateSDiv(left, right);
+    case NodeRemainder:  return builder->CreateSRem(left, right);
+    // case NodeModulo:     return builder->Create(left, right);
+    case NodeEq:         return builder->CreateICmpEQ(left, right);
+    case NodeNotEq:      return builder->CreateICmpNE(left, right);
+    case NodeLess:       return builder->CreateICmpSLT(left, right);
+    case NodeLessEq:     return builder->CreateICmpSLE(left, right);
+    case NodeGreater:    return builder->CreateICmpSGT(left, right);
+    case NodeGreaterEq:  return builder->CreateICmpSGE(left, right);
+    case NodeAnd:        return builder->CreateAnd(left, right);
+    case NodeOr:         return builder->CreateOr(left, right);
+    case NodeXor:        return builder->CreateXor(left, right);
+    case NodeShiftLeft:  return builder->CreateShl(left, right);
+    case NodeShiftRight: return builder->CreateAShr(left, right);
+    case NodeShiftRightLogical: return builder->CreateLShr(left, right);
+    default:
+        return nullptr;
+    }
+}
+
 llvm::Value * CodeGen::emitBinOp(Node *node) {
     if (node->id < NodeAdd || node->id > NodeShiftRightLogical)
         return nullptr;
@@ -397,6 +423,7 @@ llvm::Value * CodeGen::emitBinOp(Node *node) {
     llvm::Value *result = nullptr;
     LOG() << bin_op << " " << NodeName[bin_op->id] << '\n';
     auto ty = bin_op->type->id;
+    bool need_cast = false;
     if (ty == TypeFloat || ty == TypeDouble) {
         switch (node->id)
         {
@@ -415,29 +442,31 @@ llvm::Value * CodeGen::emitBinOp(Node *node) {
         default:
             break;
         }
-    } else {
-        switch (node->id)
-        {
-        case NodeAdd:        return builder->CreateNSWAdd(left, right);
-        case NodeSub:        return builder->CreateNSWSub(left, right);
-        case NodeMul:        return builder->CreateNSWMul(left, right);
-        case NodeDiv:        return builder->CreateSDiv(left, right);
-        case NodeRemainder:  return builder->CreateSRem(left, right);
-        // case NodeModulo:     return builder->Create(left, right);
-        case NodeEq:         return builder->CreateICmpEQ(left, right);
-        case NodeNotEq:      return builder->CreateICmpNE(left, right);
-        case NodeLess:       return builder->CreateICmpSLT(left, right);
-        case NodeLessEq:     return builder->CreateICmpSLE(left, right);
-        case NodeGreater:    return builder->CreateICmpSGT(left, right);
-        case NodeGreaterEq:  return builder->CreateICmpSGE(left, right);
-        case NodeAnd:        return builder->CreateAnd(left, right);
-        case NodeOr:         return builder->CreateOr(left, right);
-        case NodeXor:        return builder->CreateXor(left, right);
-        case NodeShiftLeft:  return builder->CreateShl(left, right);
-        case NodeShiftRight: return builder->CreateAShr(left, right);
-        case NodeShiftRightLogical: return builder->CreateLShr(left, right);
-        default:
-            break;
+    } else if (ty == TypeInt || ty == TypeByte) {
+        if (bin_op->lhs->id == TypeByte && bin_op->rhs->id == TypeInt) {
+            need_cast = true;
+            left = builder->CreateIntCast(left, i32_ty, false);
+        }
+        llvm::Value *val = emitBinOpInt(node->id, left, right);
+        if (val) {
+            if (node->id >= NodeEq && node->id <= NodeNotEq) return val;
+            if (need_cast) return builder->CreateIntCast(val, byte_ty, false);
+            else return val;
+        }
+    } else if (ty == TypePtr) {
+        auto lhs = builder->CreatePtrToInt(left, i64_ty);
+        llvm::Value *rhs;
+        if (bin_op->rhs->id == TypeInt) {
+            rhs = builder->CreateIntCast(right, i64_ty, false);
+            auto elem_sz = llvm::ConstantExpr::getSizeOf(left->getType()->getPointerElementType());
+            rhs = builder->CreateMul(rhs, elem_sz);
+        } else {
+            rhs = builder->CreatePtrToInt(right, i64_ty);
+        }
+        llvm::Value *val = emitBinOpInt(node->id, lhs, rhs);
+        if (val) {
+            if (node->id >= NodeEq && node->id <= NodeNotEq) return val;
+            return builder->CreateIntToPtr(val, left->getType());
         }
     }
     error(bin_op, err_types_for_operator_not_compatible, bin_op->tok->str());
@@ -516,6 +545,11 @@ llvm::Value * CodeGen::emitCast(Cast *node) {
     }
 }
 
+llvm::Value * CodeGen::emitNot(Unary *node) {
+    auto val = emitExpr(node->value);
+    return builder->CreateNot(val);
+}
+
 llvm::Value * CodeGen::emitSizeOf(Unary *node) {
     llvm::Type *ty;
     if (node->value->id < TypeEnd) {   // is a type name
@@ -525,7 +559,7 @@ llvm::Value * CodeGen::emitSizeOf(Unary *node) {
         ty = val->getType();
     }
     auto sz = M->getDataLayout().getTypeAllocSize(ty).getFixedSize();
-    return llvm::ConstantInt::get(i64_ty, sz);
+    return llvm::ConstantInt::get(i32_ty, sz);
 }
 
 llvm::Value * CodeGen::emitDeclare(TypedNode *node) {
@@ -564,7 +598,9 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     case NodeMemberAccess: val = readStructMember((Path *)node); break;
     case NodePtrIdx:       val = readPointerValue((Path *)node); break;
     case NodeSizeOf:       val = emitSizeOf((Unary *)node); break;
+    case NodeNot:          val = emitNot((Unary *)node); break;
     case NodeDeclare:      val = emitDeclare((TypedNode *)node); break;
+    case NodeNull:         val = llvm::ConstantPointerNull::get(byte_ty->getPointerTo()); break;
     default:               val = emitBinOp(node); break;
     }
     curVal = val;
@@ -646,7 +682,7 @@ llvm::Value * CodeGen::emitCode(Node *node) {
 llvm::FunctionType * CodeGen::createFuncType(FuncType *fn) {
     LOG() << fn->tok->str() << '\n';
     auto result_ty = llvm::Type::getVoidTy(Ctx);
-    if (fn->return_type)
+    if (fn->return_type->id != TypeVoid)
         result_ty = llvmType(fn->return_type);
 
     llvm::SmallVector<llvm::Type *> params_ty;
@@ -740,7 +776,7 @@ void CodeGen::emitFunc(Function *fn) {
 
     emitCode(fn->body.node);
     if (!curBB->getTerminator()) {
-        if (fn->type->return_type)
+        if (fn->type->return_type->id != TypeVoid)
             builder->CreateRet(curVal);
         else
             builder->CreateRetVoid();

@@ -286,6 +286,7 @@ private:
     Type voidTy;
     Type nullTy;
     Type boolTy;
+    Type byteTy;
     NodeBuffer nodeBuf;
 
     Logger LOG;
@@ -298,6 +299,7 @@ public:
         hiddenParamTok.len = std::char_traits<char>::length(hiddenParamTok.loc);
         uintTy = Type{TypeInt, false, 4, 4, nullptr, nullptr, TypeInt};
         boolTy = Type{TypeBool, false, 1, 1, nullptr, nullptr, TypeBool};
+        byteTy = Type{TypeByte, false, 1, 1, nullptr, nullptr, TypeByte};
         voidTy = Type{TypeVoid};
         nullTy = Type{TypeNull};
         uintPtrTy.id = TypePtr;
@@ -323,6 +325,7 @@ private:
     const Type * analyzeMathType(BinaryOp *bin);
     const Type * analyzeNodeType(Node *node);
     const Type * analyzeType(Node *node);
+    const Type * getPathType(Path *path);
 
     void addCurFuncAttr(FuncAttr attr) {
         using namespace llvm;
@@ -331,6 +334,7 @@ private:
 
     char scanByte(const char **bp);
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false, bool error = true);
+    Node * parseBool(Token *tok);
     Node * parseInteger(Token *tok);
     Node * parseByte(Token *tok);
     Node * parseString(Token *tok);
@@ -348,6 +352,7 @@ private:
     Node * parseThrow(Token *tok, Token **rest);
     Node * parseReturn(Token *tok, Token **rest);
     Node * parseDeclare(Token *tok, Token **rest);
+    Node * parseNot(Token *tok, Token **rest);
     Node * parseSizeOf(Token *tok, Token **rest);
     Node * parseFnCall(FuncType *ftype, Function *fn, Token *tok, Token **rest);
     Node * parseAssignment(Token *tok, Token **rest, bool is_in_func);
@@ -361,7 +366,7 @@ private:
     Type * parseStruct(Token *tok, Token **rest, bool is_collect = false);
     Node * parsePath(Token *tok, Token **rest, bool &is_setpath);
     Node * parseBinaryOp(Node *lhs, Token *tok, Token **rest);
-    Node * parseCode(Token *tok, Token **rest, Context *ctx, bool is_block = true);
+    Node * parseCode(Token *tok, Token **rest, Context *ctx, bool is_func_body = true, bool is_block = true);
     Node * parseCodeBlock(Token *tok, Context *ctx, bool is_func_body = false);
     void parseFunctions(Context *ctx);
     void analyzeCalls(Function *fn, bool is_main_func = true);

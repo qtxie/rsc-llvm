@@ -60,6 +60,7 @@ public:
     llvm::Value * emitCode(Node *node);
     llvm::Value * emitDeclare(TypedNode *node);
     llvm::Value * emitSizeOf(Unary *node);
+    llvm::Value * emitNot(Unary *node);
     llvm::Value * emitCast(Cast *node);
     llvm::Value * emitAll(Any *node);
     llvm::Value * emitAny(Any *node);
@@ -68,6 +69,7 @@ public:
     llvm::Value * emitEither(Either *node);
     llvm::Value * emitCall(FnCall *call);
     llvm::Value * emitBinOp(Node *node);
+    llvm::Value * emitBinOpInt(NodeId op, llvm::Value *left, llvm::Value *right);
     llvm::Value * emitExpr(Node *node);
     llvm::Value * emitAssignment(Assignment *node);
     llvm::GlobalVariable * emitGlobalVar(Variable *var, const Type *ty);

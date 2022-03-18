@@ -4,7 +4,11 @@
 #include <source_location>
 #include <llvm/Support/raw_ostream.h>
 
+#ifdef NDEBUG
+constexpr int verbose = 0;
+#else
 constexpr int verbose = 1;
+#endif
 
 class Logger {
 private:

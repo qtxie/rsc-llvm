@@ -4,7 +4,7 @@ if is_plat("windows") then
         add_cxflags("/MTd", "/FS", "/Z7", "/Od")
         add_ldflags("/DEBUG")
     elseif is_mode("release") then
-        add_cxflags("/O2")
+        add_cxflags("/O2", "-DNDEBUG")
     end
 elseif is_plat("linux") then
     add_defines("_GNU_SOURCE", "__STDC_CONSTANT_MACROS", "__STDC_FORMAT_MACROS", "__STDC_LIMIT_MACROS")
@@ -12,6 +12,8 @@ elseif is_plat("linux") then
     if is_mode("debug") then
         add_cxflags("-g")
         add_ldflags("-g")
+    elseif is_mode("release") then
+        add_defines("NDEBUG")
     end
 end
 

@@ -4,6 +4,12 @@ This is a quick and dirty implementation, for the following purposes:
 1. Give us an optimizing compiler for Red/System in a relatively short amount of time.
 2. Generate 64bit binary and support for static linking.
 
+### Usage
+
+```
+redsc.exe -L.\baselibs\x64\ .\test\test.reds
+```
+
 ### Build on Windows
 
 1. [Download LLVM libraries](https://github.com/qtxie/bigfiles/raw/main/llvm%2Bclang%2Blld-13.0.0-x86_64-windows-msvc-debug.7z).

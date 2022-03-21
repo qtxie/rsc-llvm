@@ -1,8 +1,7 @@
 Red/System []
 
-fib: func [n [integer!] return: [integer!] /local a b [integer!]][
-   if n <= 1 [ return n]
-   (fib n - 1) + (fib n - 2)
-]
+#include %../src/runtime/common.reds
 
-printf ["%d" fib 10]
+probe [2 " xyz " 3.2]
+
+quit 0

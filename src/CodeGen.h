@@ -13,11 +13,14 @@
 #include <llvm/ADT/SmallSet.h>
 
 class Compilation;
+class Parser;
 
 class CodeGen
 {
 private:
     Compilation &comp;
+    Parser *parser;
+
     llvm::LLVMContext Ctx;
     llvm::Module *M;
     llvm::IRBuilder<> *builder;
@@ -29,13 +32,12 @@ private:
     llvm::BasicBlock *continueBB;
     llvm::BasicBlock *breakBB;
     bool inLoop;
-    bool inAssign;
     bool in_catch;
     bool in_main_func;
-    llvm::Value *resultVar;
     llvm::Value *firstLocalVar;
     llvm::Value *loopCounter;
     llvm::Value *tempVarBool;
+    llvm::Value *typedValues;
 
     llvm::IntegerType *bool_ty;
     llvm::IntegerType *byte_ty;
@@ -50,6 +52,8 @@ public:
     CodeGen(Compilation &c);
     ~CodeGen() {delete M;}
     CodeGen(Compilation &&) = delete;  // prevents rvalue binding
+
+    void setParser(Parser *p) {parser = p;}
 
     llvm::Value * readPointerValue(Path *node);
     llvm::Value * getElementPtr(Path *node);

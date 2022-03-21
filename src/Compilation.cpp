@@ -203,7 +203,6 @@ void Compilation::linkCoff(llvm::SmallSet<StringRef, 4> &import_libs) {
         auto &libpath = libs.back().append(libname.data(), libname.size());
         argv.push_back(libpath.c_str());
     }
-
     if (!lld::coff::link(argv, false, llvm::outs(), llvm::errs()))
         lld::exitLld(-1);
 }
@@ -246,6 +245,7 @@ void Compilation::run() {
     llvm::outs() << "Parse time: " << t.getTimeFromBreakpoint("parse") << "ms\n";
 
     t.insertBreakpoint("codegen");
+    codegen.setParser(&parser);
     codegen.emit(prog);
     llvm::outs() << "CodeGen time: " << t.getTimeFromBreakpoint("codegen") << "ms\n";
 

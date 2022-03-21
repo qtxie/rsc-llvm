@@ -29,6 +29,8 @@ DIAG(err_str_index, Error, "attempt to use string indexing with a non-integer! v
 
 DIAG(err_float_overflow, Error, "float overflow")
 DIAG(err_int_overflow, Error, "integer overflow")
+DIAG(err_invalid_expr, Error, "invalid expression")
+DIAG(err_invalid_arg, Error, "invalid argument")
 DIAG(err_invalid_path, Error, "invalid path")
 DIAG(err_invalid_cascade, Error, "cannot cascade declare {0}")
 DIAG(err_invalid_type, Error, "invalid type")

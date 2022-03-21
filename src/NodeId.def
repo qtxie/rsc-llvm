@@ -7,6 +7,7 @@
 
 // @@ order of the types are important!
 // see TypeConv array in Parser.cpp
+// see emitCall in CodeGen.cpp
 TYPE(Void,               "void!")
 TYPE(Null,               "null!")
 TYPE(Bool,               "logic!")

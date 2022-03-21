@@ -87,6 +87,8 @@ struct Type : Node {
 
 struct TypedNode : Node {
     const Type *type;
+    bool isType(const Type *ty) {return type->id == ty->id;}
+    bool isType(NodeId id) {return type->id == id;}
 };
 
 struct Struct : Type {
@@ -120,6 +122,7 @@ struct FuncType : Type {
         using namespace llvm;
         attrs |= attr;
     }
+    bool hasAttr(FuncAttr attr) {return static_cast<bool>(attrs & attr);}
 
     bool operator <(const FuncType& rhs) const
     {
@@ -133,6 +136,7 @@ struct Function : Node {
     Token *import_lib;
     Node *locals;
     Node *temp_locals;
+    int  n_typed_value;
 
     union {
         Token *token;
@@ -155,11 +159,10 @@ struct Function : Node {
 struct Variable : TypedNode {
     VarAttr attrs;
     IrValue *ir;
-    bool isType(const Type *ty) {return type->id == ty->id;}
-    bool isType(NodeId id) {return type->id == id;}
     void addAttr(VarAttr attr) {
         attrs = static_cast<VarAttr>(attrs | attr);
     }
+    bool hasAttr(VarAttr attr) {return static_cast<bool>(attrs & attr);}
 };
 
 struct Identifier: Node {
@@ -194,6 +197,7 @@ struct FnCall : Node {
     FuncType *type;  //@@ make sure type is the first member
     Function *fn;
     Node *args;
+    int  n_args;
 };
 
 struct Return : Node {
@@ -220,6 +224,7 @@ struct Switch : Node {
     Node *value;
     SwitchCases *cases;
     Node *defaultCase;
+    Variable *result;
 };
 
 struct If : Node {
@@ -245,6 +250,7 @@ struct Either : Node {
     Node *cond;
     Node *then_body;
     Node *else_body;
+    Variable *result;
 };
 
 struct Case : Node {
@@ -274,6 +280,7 @@ private:
 
     uint32_t curTypeId;
     Context *curCtx;
+    Function *curFunc;
     SmallVector<uint32_t> tids;  // detect struct circular reference
     SmallVector<Token *> import_libs;
 
@@ -310,6 +317,12 @@ public:
 
     Context *parse(Token *tok);
 
+    const Type * addVarType(Node *node);
+    const Type * analyzeMathType(BinaryOp *bin);
+    const Type * analyzeNodeType(Node *node);
+    const Type * analyzeType(Node *node);
+    const Type * getPathType(Path *path);
+
 private:
     Variable * addVar(Context *ctx, Token * name, Variable *var = nullptr, bool is_local = false);
     void addDecl(Context *ctx, Token * name, Node *node);
@@ -321,11 +334,6 @@ private:
     Unary *getStructMember(const Type *st, Token *tok);
 
     Node * checkArgType(Node *arg, Type *expected);
-    const Type * addVarType(Node *node);
-    const Type * analyzeMathType(BinaryOp *bin);
-    const Type * analyzeNodeType(Node *node);
-    const Type * analyzeType(Node *node);
-    const Type * getPathType(Path *path);
 
     void addCurFuncAttr(FuncAttr attr) {
         using namespace llvm;
@@ -356,13 +364,14 @@ private:
     Node * parseSizeOf(Token *tok, Token **rest);
     Node * parseFnCall(FuncType *ftype, Function *fn, Token *tok, Token **rest);
     Node * parseAssignment(Token *tok, Token **rest, bool is_in_func);
+    Node * parseUnaryExpr(Token *tok, Token **rest);
     Node * parseExpr(Token *tok, Token **rest);
     Node * parseCast(Token *tok, Token **rest);
     Token * parseLocal(Token *tok, Function *func);
     Token * parseFuncSpec(Token *tok, FuncType *ftype, Function *func, bool is_collect = false);
     Token * parseEnum(Token *tok, Context *ctx);
     Token * parseImport(Token *tok, Context *ctx);
-    Node * parseMembers(Token *tok, Token **rest);
+    void parseMembers(Type *st, Token *tok, Token **rest);
     Type * parseStruct(Token *tok, Token **rest, bool is_collect = false);
     Node * parsePath(Token *tok, Token **rest, bool &is_setpath);
     Node * parseBinaryOp(Node *lhs, Token *tok, Token **rest);
@@ -377,8 +386,6 @@ private:
     }
     Node * collectDecl(Token *tok, Token **rest, bool is_func_ctx);
     Token * collectDeclarations(Token *tok, Context *ctx, bool is_block = true, bool is_func_ctx = false);
-
-    Node * collectLocals(Context *ctx, Node **end);
 
     bool resolveStruct(Type *ty, Context *ctx);
     void resolveDeclarations(Context *ctx);

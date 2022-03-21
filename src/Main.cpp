@@ -41,8 +41,12 @@ static cl::opt<bool>
              cl::desc("Emit IR code instead of assembler"),
              cl::init(false));
 
+static cl::list<std::string>
+    LibsDir("L",
+            cl::desc("libraries include path"));
+
 static cl::opt<signed char> OptLevel(
-    "O", cl::desc("Setting the optimization level:"),
+    "mode", cl::desc("Setting the optimization mode:"),
     cl::values(
         clEnumValN(0, "debug", "(default) No Optimizations"),
         clEnumValN(1, "release", "Optimize for fast binary"),
@@ -199,10 +203,10 @@ int main(int Argc, const char **Argv) {
 
     namespace fs = std::filesystem;
     auto dataDir = fs::path(getCacheDir()) / ".redrs";
-    std::filesystem::create_directories(dataDir);
+    fs::create_directories(dataDir);
 
     for (const auto &file : InputFiles) {
-        Compilation comp(file, dataDir.string(), TM, optLevel, EmitLLVM);
+        Compilation comp(file, dataDir.string(), LibsDir, TM, optLevel, EmitLLVM);
         comp.run();
     }
 

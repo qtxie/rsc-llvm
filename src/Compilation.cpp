@@ -7,6 +7,7 @@
  * Summary: The compilation context for each compilation unit
 */
 
+#include <filesystem>
 #include "Compilation.h"
 #include "Tokenizer.h"
 #include "Preprocessor.h"
@@ -177,6 +178,15 @@ void Compilation::linkElf(llvm::SmallSet<StringRef, 4> &import_libs) {
         lld::exitLld(-1);
 }
 
+std::u8string Compilation::findLib(std::string name) {
+    namespace fs = std::filesystem;
+    for (const auto &path : libsDir) {
+        auto libpath = fs::path(path) / name;
+        if (fs::exists(libpath)) return libpath.u8string();
+    }
+    return std::u8string();
+}
+
 void Compilation::linkCoff(llvm::SmallSet<StringRef, 4> &import_libs) {
     std::vector<const char *> argv{"-ERRORLIMIT:0", "-NOLOGO"};
     argv.push_back("-DEBUG");
@@ -194,14 +204,15 @@ void Compilation::linkCoff(llvm::SmallSet<StringRef, 4> &import_libs) {
     auto entry = std::string("-ENTRY:") + entryFuncName;
     argv.push_back(entry.c_str());
 
-    auto lib_dir = appDataDir + OS_DIR_SEP;
-    std::vector<std::string> libs;
+    std::vector<std::u8string> libs;
     for (auto &lib : import_libs) {
         SmallVector<char> libname(lib.begin(), lib.end());
         llvm::sys::path::replace_extension(libname, ".lib");
-        libs.push_back(lib_dir);
-        auto &libpath = libs.back().append(libname.data(), libname.size());
-        argv.push_back(libpath.c_str());
+        auto libpath = findLib(std::string(libname.data(), libname.size()));
+        if (!libpath.empty()) {
+            libs.push_back(libpath);
+            argv.push_back((char *)libs.back().c_str());
+        }
     }
     if (!lld::coff::link(argv, false, llvm::outs(), llvm::errs()))
         lld::exitLld(-1);

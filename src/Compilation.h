@@ -34,6 +34,7 @@ class Compilation {
 public:
     std::string mainFile;
     std::string appDataDir;
+    std::vector<std::string> &libsDir;
     llvm::TargetMachine *TM;
     OptimizationLevel optLevel;
     bool emitIr;
@@ -55,10 +56,11 @@ public:
     Compilation(
         std::string filepath,
         std::string data_dir,
+        std::vector<std::string> &libs_dir,
         llvm::TargetMachine *target,
         OptimizationLevel level,
         bool emit_llvm = false
-        ) : mainFile(filepath), appDataDir(data_dir), TM(target), optLevel(level), emitIr(emit_llvm) {
+        ) : mainFile(filepath), appDataDir(data_dir), libsDir(libs_dir), TM(target), optLevel(level), emitIr(emit_llvm) {
         entryFuncName = "__Red/System__MainStartup";
     }
 
@@ -66,6 +68,8 @@ public:
     void linkElf(llvm::SmallSet<StringRef, 4> &import_libs);
     void linkCoff(llvm::SmallSet<StringRef, 4> &import_libs);
     void link(llvm::SmallSet<StringRef, 4> &import_libs);
+
+    std::u8string findLib(std::string name);
 
     std::string toNativePath(const char *p, int len);
     const char* readFile(const std::string &filepath, SMLoc include_loc);

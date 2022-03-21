@@ -696,7 +696,7 @@ llvm::Value * CodeGen::emitAssignment(Assignment *node) {
     assert(val != nullptr);
 LOG() << node->lhs->tok->str() << '\n';
     if (dest == nullptr && dest_id == NodeVar) {
-        if (node->rhs->id == NodeDeclare) {
+        if (left->type->id == TypePtr) {
             left->ir = val;
             return nullptr;
         } else {

@@ -57,8 +57,6 @@ CodeGen::CodeGen(Compilation &c) : comp(c) {
     byte_ty = llvm::Type::getInt8Ty(Ctx);
     inLoop = false;
     in_catch = false;
-    in_main_func = false;
-    firstLocalVar = nullptr;
 }
 
 llvm::Value * CodeGen::readStructMember(Path *path) {
@@ -348,19 +346,22 @@ void CodeGen::emitWhile(While *node) {
 void CodeGen::handleThrow() {
     auto after_if_bb = createBasicBlock("after.if", afterCatchBB);
     auto catch_bb = createBasicBlock("catch", afterCatchBB);
-    auto rethrow_bb = createBasicBlock("rethrow");
-    auto exception_val = in_main_func ? firstLocalVar : curFunc->getArg(0);
+    auto exception_val = curFunc->getArg(0);
     llvm::Value *exception = builder->CreateLoad(exception_val);
     auto zero = llvm::ConstantInt::get(i32_ty, 0);
     builder->CreateCondBr(builder->CreateICmpEQ(exception, zero), after_if_bb, catch_bb);
 
     setCurrentBasicBlock(catch_bb);
-    llvm::Value *filter = in_catch ? catchFilter : zero; 
-    llvm::Value *cond = builder->CreateICmpSLE(exception, filter);
-    builder->CreateCondBr(cond, afterCatchBB, rethrow_bb);
+    if (afterCatchBB) {     // has catch
+        auto rethrow_bb = createBasicBlock("rethrow");
+        llvm::Value *filter = in_catch ? catchFilter : zero; 
+        llvm::Value *cond = builder->CreateICmpSLE(exception, filter);
+        builder->CreateCondBr(cond, afterCatchBB, rethrow_bb);
+        setCurrentBasicBlock(rethrow_bb);
+    }
 
-    setCurrentBasicBlock(rethrow_bb);
-    builder->CreateRetVoid();
+    if (returnVal) builder->CreateRet(builder->CreateLoad(returnVal));
+    else builder->CreateRetVoid();
 
     setCurrentBasicBlock(after_if_bb);
 }
@@ -445,21 +446,22 @@ llvm::Value * CodeGen::emitCall(FnCall *call) {
     return call_inst;
 }
 
-llvm::Value * CodeGen::emitBinOpInt(NodeId op, llvm::Value *left, llvm::Value *right) {
+llvm::Value * CodeGen::emitBinOpInt(NodeId op, llvm::Value *left, llvm::Value *right, bool isSigned) {
     switch (op)
     {
-    case NodeAdd:        return builder->CreateNSWAdd(left, right);
-    case NodeSub:        return builder->CreateNSWSub(left, right);
-    case NodeMul:        return builder->CreateNSWMul(left, right);
-    case NodeDiv:        return builder->CreateSDiv(left, right);
-    case NodeRemainder:  return builder->CreateSRem(left, right);
+    case NodeAdd:        return isSigned ? builder->CreateNSWAdd(left, right) : builder->CreateNUWAdd(left, right);
+    case NodeSub:        return isSigned ? builder->CreateNSWSub(left, right) : builder->CreateNUWSub(left, right);
+    case NodeMul:        return isSigned ? builder->CreateNSWMul(left, right) : builder->CreateNUWMul(left, right);
+    case NodeDiv:        return isSigned ? builder->CreateSDiv(left, right) : builder->CreateUDiv(left, right);
+    case NodeModulo:
+    case NodeRemainder:  return isSigned ? builder->CreateSRem(left, right) : builder->CreateURem(left, right);
     // case NodeModulo:     return builder->Create(left, right);
     case NodeEq:         return builder->CreateICmpEQ(left, right);
     case NodeNotEq:      return builder->CreateICmpNE(left, right);
-    case NodeLess:       return builder->CreateICmpSLT(left, right);
-    case NodeLessEq:     return builder->CreateICmpSLE(left, right);
-    case NodeGreater:    return builder->CreateICmpSGT(left, right);
-    case NodeGreaterEq:  return builder->CreateICmpSGE(left, right);
+    case NodeLess:       return isSigned ? builder->CreateICmpSLT(left, right) : builder->CreateICmpULT(left, right);
+    case NodeLessEq:     return isSigned ? builder->CreateICmpSLE(left, right) : builder->CreateICmpULE(left, right);
+    case NodeGreater:    return isSigned ? builder->CreateICmpSGT(left, right) : builder->CreateICmpUGT(left, right);
+    case NodeGreaterEq:  return isSigned ? builder->CreateICmpSGE(left, right) : builder->CreateICmpUGE(left, right);
     case NodeAnd:        return builder->CreateAnd(left, right);
     case NodeOr:         return builder->CreateOr(left, right);
     case NodeXor:        return builder->CreateXor(left, right);
@@ -502,12 +504,12 @@ llvm::Value * CodeGen::emitBinOp(Node *node) {
         default:
             break;
         }
-    } else if (ty == TypeInt || ty == TypeByte) {
+    } else if (ty == TypeInt || ty == TypeByte || ty == TypeBool) {
         if (left->getType() != right->getType() && left->getType()->isIntegerTy(8)) {
             need_cast = true;
             left = builder->CreateIntCast(left, i32_ty, false);
         }
-        llvm::Value *val = emitBinOpInt(node->id, left, right);
+        llvm::Value *val = emitBinOpInt(node->id, left, right, ty == TypeInt);
         if (val) {
             if (node->id >= NodeEq && node->id <= NodeNotEq) return val;
             if (need_cast) return builder->CreateIntCast(val, byte_ty, false);
@@ -517,13 +519,13 @@ llvm::Value * CodeGen::emitBinOp(Node *node) {
         auto lhs = builder->CreatePtrToInt(left, i64_ty);
         llvm::Value *rhs;
         if (right->getType()->isIntegerTy()) {
-            rhs = builder->CreateIntCast(right, i64_ty, false);
+            rhs = builder->CreateIntCast(right, i64_ty, true);
             auto elem_sz = llvm::ConstantExpr::getSizeOf(left->getType()->getPointerElementType());
             rhs = builder->CreateMul(rhs, elem_sz);
         } else {
             rhs = builder->CreatePtrToInt(right, i64_ty);
         }
-        llvm::Value *val = emitBinOpInt(node->id, lhs, rhs);
+        llvm::Value *val = emitBinOpInt(node->id, lhs, rhs, false);
         if (val) {
             if (node->id >= NodeEq && node->id <= NodeNotEq) return val;
             return builder->CreateIntToPtr(val, left->getType());
@@ -628,13 +630,16 @@ llvm::Value * CodeGen::emitSizeOf(Unary *node) {
 
 llvm::Value * CodeGen::emitDeclare(TypedNode *node) {
     auto ty = node->type;
+    bool is_struct = false;
     if (ty->id == TypePtr && ty->data.type->id == TypeStruct) {
         ty = ty->data.type;
+        is_struct = true;
     }
     auto type = llvmType(ty);
-    auto var = new llvm::GlobalVariable(*M, type, false, 
-        GlobalValue::PrivateLinkage, nullptr, node->tok->str());
-    var->setInitializer(llvm::ConstantAggregateZero::get(type));
+    auto linkage = node->is_signed ? GlobalValue::InternalLinkage : GlobalValue::PrivateLinkage;
+    auto var = new llvm::GlobalVariable(*M, type, false, linkage, nullptr, node->tok->str());
+    if (is_struct) var->setInitializer(llvm::ConstantAggregateZero::get(type));
+    else var->setInitializer(llvm::Constant::getNullValue(type));
     return var;
 }
 
@@ -695,14 +700,21 @@ llvm::Value * CodeGen::emitAssignment(Assignment *node) {
     }
     assert(val != nullptr);
 LOG() << node->lhs->tok->str() << '\n';
-    if (dest == nullptr && dest_id == NodeVar) {
+    if (dest_id == NodeVar && left->hasAttr(VarGlobal)) {
         if (left->type->id == TypePtr) {
             left->ir = val;
             return nullptr;
         } else {
-            auto var = emitGlobalVar(left, left->type);
-            var->setInitializer(llvm::cast<llvm::Constant>(val));
-            return val;
+            if (dest == nullptr) {
+                auto var = emitGlobalVar(left, left->type);
+                if (llvm::isa<llvm::Constant>(val)) {
+                    var->setInitializer(llvm::cast<llvm::Constant>(val));
+                    return val;
+                } else {
+                    var->setInitializer(llvm::Constant::getNullValue(llvmType(left->type)));
+                    dest = var;
+                }
+            }
         }
     }
 
@@ -715,9 +727,14 @@ LOG() << node->lhs->tok->str() << '\n';
 
 void CodeGen::emitThrow(Throw *node) {
     auto val = emitExpr(node->value);
+    auto system = M->getNamedGlobal("system");
+    auto thrown = builder->CreateStructGEP(system->getType()->getScalarType()->getPointerElementType(), system, 9);
+    builder->CreateStore(val, thrown);
+
     auto arg_throw = curFunc->getArg(0);
     builder->CreateStore(val, arg_throw);
-    builder->CreateRetVoid();
+    if (returnVal) builder->CreateRet(builder->CreateLoad(returnVal));
+    else builder->CreateRetVoid();
 }
 
 void CodeGen::emitCatch(Catch *node) {
@@ -727,6 +744,8 @@ void CodeGen::emitCatch(Catch *node) {
     emitCode(node->body);
     builder->CreateBr(afterCatchBB);
     setCurrentBasicBlock(afterCatchBB);
+    auto exception_val = curFunc->getArg(0);
+    builder->CreateStore(llvm::ConstantInt::get(i32_ty, 0), exception_val);
     in_catch = false;
 }
 
@@ -744,6 +763,7 @@ llvm::Value * CodeGen::emitCode(Node *node) {
         case NodeBreak:  emitBreak(node); break;
         case NodeContinue: emitContinue(node); break;
         case NodeReturn: builder->CreateRet(emitExpr(((Return *)node)->expr)); break;
+        case NodeExit: builder->CreateRetVoid(); break;
         case NodeThrow: emitThrow((Throw *)node); break;
         case NodeCatch: emitCatch((Catch *)node); break;
         case NodeAssign: val = emitAssignment((Assignment *)node); break;
@@ -846,6 +866,9 @@ void CodeGen::emitFunc(Function *fn) {
     alloca_on_stack(fn->locals);
     if (fn->hasAttr(FuncHasAnyAll)) tempVarBool = builder->CreateAlloca(bool_ty);
     if (fn->hasAttr(FuncHasLoop)) loopCounter = builder->CreateAlloca(i32_ty);
+    auto ret_ty = fn->type->return_type;
+    if (ret_ty->id != TypeVoid) returnVal = builder->CreateAlloca(llvmType(ret_ty));
+    else returnVal = nullptr;
 
     if (fn->n_typed_value > 0) {
         auto typed_value = llvm::StructType::create(Ctx, {i32_ty, i64_ty}, "", true);
@@ -853,14 +876,9 @@ void CodeGen::emitFunc(Function *fn) {
         typedValues = builder->CreateAlloca(arr);
     }
 
-    if (in_main_func && fn->isThrowable()) {
-        afterCatchBB = createBasicBlock("after.catch");
-        firstLocalVar = ((Variable *)fn->locals)->ir;
-    }
-
     emitCode(fn->body.node);
     if (!curBB->getTerminator()) {
-        if (fn->type->return_type->id != TypeVoid)
+        if (ret_ty->id != TypeVoid)
             builder->CreateRet(curVal);
         else
             builder->CreateRetVoid();
@@ -881,21 +899,51 @@ void CodeGen::emitFunctions(Context *ctx) {
 
 void CodeGen::emitMainFunc(Function *fn) {
     LOG() << '\n';
-    auto func_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), false);
-    auto llvm_fn = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, comp.entryFuncName, *M);
+    auto func_ty = createFuncType(fn->type);
+    auto llvm_fn = llvm::Function::Create(func_ty, GlobalValue::InternalLinkage, "__Red/System__MainStartup", *M);
     llvm_fn->addFnAttr(llvm::Attribute::NoBuiltin);
     llvm_fn->addFnAttr(llvm::Attribute::NoInline);
     llvm_fn->addFnAttr(llvm::Attribute::NoReturn);
     llvm_fn->addFnAttr(llvm::Attribute::get(Ctx, llvm::Attribute::StackAlignment, 16));
 
     fn->ir = llvm_fn;
-    in_main_func = true;
     emitFunc(fn);
-    if (fn->isThrowable() && !afterCatchBB->getTerminator()) {
-        setCurrentBasicBlock(afterCatchBB);
+}
+
+void CodeGen::createEntryFunc(Function *main_fn) {
+    auto func_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), false);
+    auto llvm_fn = llvm::Function::Create(func_ty, GlobalValue::ExternalLinkage, comp.entryFuncName, *M);
+    curFunc = llvm_fn;
+
+    llvm_fn->addFnAttr(llvm::Attribute::NoInline);
+    llvm_fn->addFnAttr(llvm::Attribute::NoReturn);
+    llvm_fn->addFnAttr(llvm::Attribute::get(Ctx, llvm::Attribute::StackAlignment, 16));
+
+    auto entry_block = BasicBlock::Create(Ctx, "entry", llvm_fn);
+    setCurrentBasicBlock(entry_block);
+
+    if (main_fn->isThrowable()) {
+        auto thrown = builder->CreateAlloca(i32_ty);
+        auto zero = llvm::ConstantInt::get(i32_ty, 0);
+        builder->CreateStore(zero, thrown);
+        builder->CreateCall(main_fn->type->ir, main_fn->ir, {thrown});
+
+        llvm::Value *exception = builder->CreateLoad(thrown);
+        auto no_exception_bb = createBasicBlock("no_exception");
+        auto catch_bb = createBasicBlock("catch");
+        builder->CreateCondBr(builder->CreateICmpEQ(exception, zero), no_exception_bb, catch_bb);
+
+        // handle exception
+        setCurrentBasicBlock(catch_bb);
+        auto handler = M->getFunction("***-uncaught-exception");
+        if (handler) builder->CreateCall(handler);
         builder->CreateRetVoid();
+
+        setCurrentBasicBlock(no_exception_bb);
+    } else {
+        builder->CreateCall(main_fn->type->ir, main_fn->ir);
     }
-    in_main_func = false;
+    builder->CreateRetVoid();
 }
 
 void CodeGen::output() {
@@ -985,6 +1033,7 @@ void CodeGen::emit(Context *ctx) {
     createFunctions(ctx);
     emitMainFunc(ctx->func);
     emitFunctions(ctx);
+    createEntryFunc(ctx->func);
     output();
 }
 

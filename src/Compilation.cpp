@@ -231,17 +231,33 @@ void Compilation::run() {
     TimeMeasuring t(true);
 
     t.insertBreakpoint("tokenizer");
+    Token *beg = nullptr;
     Token *end_tok = nullptr;
-    Token *tok = tokenizeFile(mainFile, &end_tok);
+
+    // runtime prolog
+    auto rt = std::filesystem::path(runtimeDir) / "common.reds";
+    if (std::filesystem::exists(rt))
+        beg = tokenizeFile(rt.string(), &end_tok, true);
+
+    Token *end_tok2 = nullptr;
+    Token *tok = tokenizeFile(mainFile, &end_tok2);
+    tok = parseHeader(tok);
+    if (beg && end_tok) end_tok->next = tok;
+    else beg = tok;
+
+    // runtime epilog
+    rt = std::filesystem::path(runtimeDir) / "epilog.reds";
+    if (std::filesystem::exists(rt)) {
+        tok = tokenizeFile(rt.string(), &end_tok, true);
+        if (end_tok2) end_tok2->next = tok;
+    }
     llvm::outs() << "Tokenize time: " << t.getTimeFromBreakpoint("tokenizer") << "ms\n";
 
-    dumpTokens(tok, "All the tokens:");
-
-    tok = parseHeader(tok);
+    dumpTokens(beg, "All the tokens:");
 
     t.insertBreakpoint("preprocess");
     auto pp = Preprocessor(*this);
-    tok = pp.preprocess(tok);
+    tok = pp.preprocess(beg);
     llvm::outs() << "Preprocess time: " << t.getTimeFromBreakpoint("preprocess") << "ms\n";
 
     dumpTokens(tok, "Preprocessed tokens:");

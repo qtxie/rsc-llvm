@@ -286,7 +286,7 @@ private:
 
     bool isSizeOf;
     std::set<FuncType> funcTypeCache;
-    SmallVector<std::tuple<Function*, FnCall*, bool>> unresolvedCalls;
+    SmallVector<std::tuple<Function*, FnCall*>> unresolvedCalls;
     Token hiddenParamTok;
     Type uintPtrTy;
     Type uintTy;
@@ -340,7 +340,7 @@ private:
         curCtx->func->type->attrs |= attr;
     }
 
-    char scanByte(const char **bp);
+    char scanByte(const char **bp, int *err);
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false, bool error = true);
     Node * parseBool(Token *tok);
     Node * parseInteger(Token *tok);
@@ -359,6 +359,7 @@ private:
     Node * parseCatch(Token *tok, Token **rest);
     Node * parseThrow(Token *tok, Token **rest);
     Node * parseReturn(Token *tok, Token **rest);
+    Node * parseExit(Token *tok, Token **rest);
     Node * parseDeclare(Token *tok, Token **rest);
     Node * parseNot(Token *tok, Token **rest);
     Node * parseSizeOf(Token *tok, Token **rest);
@@ -378,8 +379,8 @@ private:
     Node * parseCode(Token *tok, Token **rest, Context *ctx, bool is_func_body = true, bool is_block = true);
     Node * parseCodeBlock(Token *tok, Context *ctx, bool is_func_body = false);
     void parseFunctions(Context *ctx);
-    void analyzeCalls(Function *fn, bool is_main_func = true);
-    void updateCall(Function *fn, FnCall *call, bool is_main_func);
+    void analyzeCalls(Function *fn);
+    void updateCall(Function *fn, FnCall *call);
 
     const Type * collectAlias(Token *tok, Token **rest) {
         return parseType(tok, rest, false, true);

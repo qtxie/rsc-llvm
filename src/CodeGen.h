@@ -33,11 +33,10 @@ private:
     llvm::BasicBlock *breakBB;
     bool inLoop;
     bool in_catch;
-    bool in_main_func;
-    llvm::Value *firstLocalVar;
     llvm::Value *loopCounter;
     llvm::Value *tempVarBool;
     llvm::Value *typedValues;
+    llvm::Value *returnVal;
 
     llvm::IntegerType *bool_ty;
     llvm::IntegerType *byte_ty;
@@ -73,7 +72,7 @@ public:
     llvm::Value * emitEither(Either *node);
     llvm::Value * emitCall(FnCall *call);
     llvm::Value * emitBinOp(Node *node);
-    llvm::Value * emitBinOpInt(NodeId op, llvm::Value *left, llvm::Value *right);
+    llvm::Value * emitBinOpInt(NodeId op, llvm::Value *left, llvm::Value *right, bool isSigned);
     llvm::Value * emitExpr(Node *node);
     llvm::Value * emitAssignment(Assignment *node);
     llvm::GlobalVariable * emitGlobalVar(Variable *var, const Type *ty);
@@ -94,6 +93,7 @@ public:
 
     void createFunctions(Context *ctx);
     llvm::Value * createFunc(Function *fn, Context *ctx);
+    void createEntryFunc(Function *main_fn);
 
     void output();
     void emit(Context *prog);

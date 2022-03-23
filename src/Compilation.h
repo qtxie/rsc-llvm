@@ -34,6 +34,7 @@ class Compilation {
 public:
     std::string mainFile;
     std::string appDataDir;
+    std::string runtimeDir;
     std::vector<std::string> &libsDir;
     llvm::TargetMachine *TM;
     OptimizationLevel optLevel;
@@ -56,12 +57,14 @@ public:
     Compilation(
         std::string filepath,
         std::string data_dir,
+        std::string rt_dir,
         std::vector<std::string> &libs_dir,
         llvm::TargetMachine *target,
         OptimizationLevel level,
         bool emit_llvm = false
-        ) : mainFile(filepath), appDataDir(data_dir), libsDir(libs_dir), TM(target), optLevel(level), emitIr(emit_llvm) {
-        entryFuncName = "__Red/System__MainStartup";
+        ) : mainFile(filepath), appDataDir(data_dir), runtimeDir(rt_dir),
+            libsDir(libs_dir), TM(target), optLevel(level), emitIr(emit_llvm) {
+        entryFuncName = "__Red/System__MainStartup0";
     }
 
     void run();

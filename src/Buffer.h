@@ -51,8 +51,8 @@ public:
     T* alloc(uint32_t size) {
         if (LLVM_UNLIKELY(Count + size > ElementsPerChunk))
             addChunk();
-        auto ptr = Chunk;
-        Chunk += size;
+        auto ptr = Chunk + Count;
+        Count += size;
         return ptr;
     }
 };

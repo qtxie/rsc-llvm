@@ -570,6 +570,11 @@ const Type * Parser::addVarType(Node *node) {
         const Type *ty = addVarType(assign->rhs);
         if (dest_id == NodeVar) {
             Variable *var = (Variable *) assign->lhs;
+            auto rhs = assign->rhs;
+            if (rhs->id == NodeDeclare) {
+                rhs->tok = var->tok;
+                rhs->is_signed = var->hasAttr(VarGlobal);
+            }
             if (!var->type) {
                 if (ty->id == TypeVoid) error(assign->rhs, err_no_type, var->tok->str());
                 var->type = ty;
@@ -581,6 +586,7 @@ const Type * Parser::addVarType(Node *node) {
         } else if (dest_id == NodeMemberAccess) {
 
         }
+        assign->type = ty;
         return ty;
     } else {
         return analyzeNodeType(node);
@@ -648,6 +654,11 @@ const Type * Parser::analyzeNodeType(Node *node) {
 
     switch (node->id)
     {
+    case NodeAssign: {
+        Assignment *assign = (Assignment *)node;
+        if (assign->type) return assign->type;
+        else return addVarType(node);
+    }
     case NodeFnCall: {
         analyzeType(((FnCall *)node)->args);   // type-checking for args
         return ((FnCall*)node)->type->return_type;
@@ -692,7 +703,8 @@ const Type * Parser::analyzeNodeType(Node *node) {
         Either *e = (Either *)node;
         analyzeNodeType(e->cond);
         auto t1 = analyzeType(e->then_body);
-        auto t2 = analyzeType(e->else_body);
+        auto t2 = t1;
+        if (e->else_body) t2 = analyzeType(e->else_body);
         if (t1->id != TypeVoid && t2->id != TypeVoid && 
             (t1->id == t2->id || t1->id == TypeNull || t2->id == TypeNull)) {
             e->result = add_local_var(t1, node);
@@ -765,39 +777,30 @@ const Type * Parser::analyzeType(Node *node) {
     return curTy;
 }
 
-void Parser::updateCall(Function *fn, FnCall *call, bool is_main_func) {
+void Parser::updateCall(Function *fn, FnCall *call) {
     Variable *var;
     if (fn->isThrowable()) {
-        var = is_main_func ? (Variable *)fn->locals : (Variable *)fn->type->params;
+        var = (Variable *)fn->type->params;
     } else {
         var = newNode<Variable>(NodeVar, &hiddenParamTok);
-        if (is_main_func) {
-            var->type = &uintTy;
-            // add a hidden local variable in caller for exception handling
-            var->next = fn->locals;
-            fn->locals = var;
-        } else {
-            auto ftype = fn->type;
-            var->type = &uintPtrTy;
-            // add a hidden param in caller for exception handling
-            var->next = ftype->params;
-            ftype->params = var;
-        }
+        auto ftype = fn->type;
+        var->type = &uintPtrTy;
+        // add a hidden param in caller for exception handling
+        var->next = ftype->params;
+        ftype->params = var;
         fn->addAttr(FuncThrow);
     }
     Node *arg;
-    if (is_main_func) {
-        arg = newPtrNode(var, var->tok);
-    } else {
-        auto ident = newNode<Identifier>(NodeIdent, var->tok);
-        ident->var = var;
-        arg = ident;
-    }
+
+    // add an argument
+    auto ident = newNode<Identifier>(NodeIdent, var->tok);
+    ident->var = var;
+    arg = ident;
     arg->next = call->args;
     call->args = arg;
 }
 
-void Parser::analyzeCalls(Function *fn, bool is_main_func) {
+void Parser::analyzeCalls(Function *fn) {
     constexpr NodeId Analyzing = TypeFuncUnresolved;
 
     if (fn->is_signed || !fn->calls) return;
@@ -805,21 +808,21 @@ void Parser::analyzeCalls(Function *fn, bool is_main_func) {
     bool is_updated = true;
     for (auto &call : *fn->calls) {
         LOG() << fn->tok->str() << " " << call->fn->tok->str() << '\n';
-        if (call->fn->id != Analyzing) analyzeCalls(call->fn, false);
+        if (call->fn->id != Analyzing) analyzeCalls(call->fn);
         if (call->fn->isThrowable()) {
-            updateCall(fn, call, is_main_func);
+            updateCall(fn, call);
         } else if (call->fn->id == Analyzing) {
-            unresolvedCalls.push_back({fn, call, is_main_func});
+            unresolvedCalls.push_back({fn, call});
             is_updated = false;
         }
     }
     fn->is_signed = true;   // reuse this field, func has been analyzed.
     if (is_updated) fn->id = TypeFunc;
 
-    if (is_main_func && !unresolvedCalls.empty()) {
-        for (auto &[f, call, is_main] : unresolvedCalls) {
+    if (!unresolvedCalls.empty()) {
+        for (auto &[f, call] : unresolvedCalls) {
             if (call->fn->isThrowable())
-                updateCall(f, call, is_main);
+                updateCall(f, call);
             f->id = TypeFunc;
         }
     }
@@ -1180,8 +1183,9 @@ Node * Parser::parseBinaryOp(Node *lhs, Token *tok, Token **rest) {
         else is_bin_op = false;
 
         if (is_bin_op) {
+            auto op_tok = tok->next;
             node = newNode<BinaryOp>(node_id, lhs, parseUnaryExpr(tok->next->next, &tok));
-            node->tok = tok;
+            node->tok = op_tok;
             lhs = node;
         } else {
             break;
@@ -1191,7 +1195,7 @@ Node * Parser::parseBinaryOp(Node *lhs, Token *tok, Token **rest) {
     return node ? node : lhs;
 }
 
-char Parser::scanByte(const char **bp) {
+char Parser::scanByte(const char **bp, int *err) {
     static constexpr std::array<std::pair<const StringLiteral, char>, 8> Esc_Names = {{
         {"line",   10},
         {"tab",    9},
@@ -1246,7 +1250,7 @@ char Parser::scanByte(const char **bp) {
 			n = (n << 4) + c;
 			cp++;
 		}
-		if ((cp - *bp) > 4) return -1;
+		if ((cp - *bp) > 4) {*err = -1; return 0;}
 		if (*cp == ')') {
 			cp++;
 			*bp = cp;
@@ -1263,7 +1267,8 @@ char Parser::scanByte(const char **bp) {
                 }
             }
 		}
-		return -1;
+        *err = -1;
+		return 0;
 
     default:
 		n = toupper(c);
@@ -1290,8 +1295,9 @@ Node * Parser::parseInteger(Token *tok) {
 
 Node * Parser::parseByte(Token *tok) {
     auto p = &(tok->loc);
-    auto chr = scanByte(p);
-    if (chr == -1) comp.error(tok, err_invalid_token);
+    int err = 0;
+    auto chr = scanByte(p, &err);
+    if (err == -1) comp.error(tok, err_invalid_token);
     auto ty = newNode<Type>(TypeByte, tok);
     ty->data.chr = chr;
     return ty;
@@ -1311,8 +1317,9 @@ Node * Parser::parseString(Token *tok) {
         while (src < end) {
             chr = *src;
             if (chr == '^') {
-                chr = scanByte(&src);
-                if (chr == -1) comp.error(src, err_invalid_token);
+                int err = 0;
+                chr = scanByte(&src, &err);
+                if (err == -1) comp.error(src, err_invalid_token);
                 src--;
             }
             dst[n] = chr;
@@ -1640,9 +1647,17 @@ Node * Parser::parseIf(Token *tok, Token **rest) {
 }
 
 Node * Parser::parseReturn(Token *tok, Token **rest) {
+    if (curFunc->type->return_type->id == TypeVoid)
+        comp.error(tok, err_return_type);
     auto node = newNode<Return>(NodeReturn, tok);
     node->expr = parseExpr(tok->next, rest);
     return node;
+}
+
+Node * Parser::parseExit(Token *tok, Token **rest) {
+    if (curFunc->type->return_type->id != TypeVoid)
+        comp.error(tok, err_requires_return);
+    return newNode<Node>(NodeExit, tok);
 }
 
 Node * Parser::parseThrow(Token *tok, Token **rest) {
@@ -1698,8 +1713,8 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_func_bo
         case TokenIdReturn: node = parseReturn(tok, &tok); break;
         case TokenIdThrow: node = parseThrow(tok, &tok); break;
         case TokenIdCatch: node = parseCatch(tok, &tok); break;
+        case TokenIdExit: node = parseExit(tok, &tok); break;
 
-        case TokenIdExit:
         case TokenIdWith:
         case TokenIdUse: tok = tok->next; break;
         case TokenIdRBracket:

@@ -580,6 +580,7 @@ const Type * Parser::addVarType(Node *node) {
                 var->type = ty;
             } else {
                 // Type checking
+                if (var->type->id == TypePtr && ty->id == TypeNull) return ty;
                 if (!var->isType(ty))
                     error(assign->rhs, err_expected_type, TypeName[var->type->id], TypeName[ty->id]);
             }
@@ -715,6 +716,15 @@ const Type * Parser::analyzeNodeType(Node *node) {
     }
     case NodeSwitch: {
         Switch *s = (Switch *)node;
+        const Type *val_ty = analyzeNodeType(s->value);
+
+        for (auto &s : *s->cases) {
+            //auto result = TypeConv[val->id][val_ty->id];
+            if (s.first->id != val_ty->id) {
+                s.first->id = val_ty->id;
+            }
+        }
+
         const Type *ty = nullptr;
         for (auto &[val, body] : *s->cases) {
             auto cur_ty = analyzeType(body);
@@ -1350,7 +1360,7 @@ Node * Parser::parseDeclare(Token *tok, Token **rest) {
     auto node = newNode<TypedNode>(NodeDeclare, tok);
     node->type = parseType(tok->next, rest, false);
     auto end = *rest;
-    while (tok->next < end) tok = tok->next;
+    while (tok->next != end) tok = tok->next;
     *rest = tok;
     return node;
 }

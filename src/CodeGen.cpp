@@ -77,17 +77,16 @@ llvm::Value * CodeGen::getElementPtr(Path *path) {
     Variable *var = (Variable *)path->first;
     LOG() << var->tok->str() << ' ' << TypeName[var->type->id] << '\n';
 
-    llvm::Type *ty = llvmType(var);
+    llvm::Type *ty;
     llvm::Value *ptr;
     if (var->type->id == TypeStruct) {
-        ty = ty->getPointerTo();
         ptr = var->ir;
+        ty = ptr->getType()->getPointerTo();
     } else {
         ptr = readVariable(var);
+        ty = ptr->getType();
     }
     ty = ty->getPointerElementType();
-
-LOG() << ptr << '\n';
 
     Unary *node = (Unary *)path->value;
     NodeId type_id;
@@ -179,7 +178,8 @@ llvm::Value * CodeGen::emitSwitch(Switch *node) {
         if (!curBB->getTerminator())
             builder->CreateBr(after_switch);
     } else {
-        //TBD: throw an exception
+        //TBD: throw an exception?
+        builder->CreateBr(after_switch);
     }
 
     setCurrentBasicBlock(after_switch);
@@ -282,24 +282,20 @@ void CodeGen::emitUntil(Until *node) {
     auto conti_bb = continueBB;
     auto break_bb = breakBB;
 
-    llvm::BasicBlock *until_body;
+    llvm::BasicBlock *until_body = createBasicBlock("until.body");;
     auto after_until = createBasicBlock("after.until");
-
-    if (curBB->empty()) {
-        curBB->setName("until.body");
-        until_body = curBB;
-    } else {
-        until_body = createBasicBlock("until.body");
-        builder->CreateBr(until_body);
-        setCurrentBasicBlock(until_body);
-    }
+        
+    builder->CreateBr(until_body);
+    setCurrentBasicBlock(until_body);
 
     continueBB = until_body;
     breakBB = after_until;
     inLoop = true;
 
     llvm::Value *cond = emitCode(node->body);
-    builder->CreateCondBr(cond, after_until, until_body);
+    if (cond) {
+        builder->CreateCondBr(cond, after_until, until_body);
+    }
 
     inLoop = in_loop;
     breakBB = break_bb;
@@ -327,7 +323,7 @@ void CodeGen::emitWhile(While *node) {
     }
 
     llvm::Value *cond = emitCode(node->cond);
-    builder->CreateCondBr(cond, while_body, after_while);
+    if (cond) builder->CreateCondBr(cond, while_body, after_while);
 
     setCurrentBasicBlock(while_body);
 
@@ -369,7 +365,7 @@ void CodeGen::handleThrow() {
 llvm::Value * CodeGen::emitCall(FnCall *call) {
     static const int typed_id[] = {
     // void null logic byte integer float32 float64 enum pointer struct
-        0,   0,   1,    3,   2,      4,      5,     2,   8,       1000,
+        0,   8,   1,    3,   2,      4,      5,     2,   8,       1000,
     // func c-str binary array
        9,    6,   10,    11
     };
@@ -429,12 +425,15 @@ llvm::Value * CodeGen::emitCall(FnCall *call) {
             args = args->next;
         }
     } else {
+        int n = 0;
         while (args) {
-            LOG() << args->tok->str() << '\n';
             auto v = emitExpr(args);
-            LOG() << v << '\n';
+            if (args->id == NodeNull) {
+                v = builder->CreateBitCast(v, fn_ty->ir->getParamType(n));
+            }
             argv.push_back(v);
             args = args->next;
+            n++;
         }
     }
 
@@ -760,8 +759,8 @@ llvm::Value * CodeGen::emitCode(Node *node) {
         case NodeLoop:   emitLoop((Loop *)node); break;
         case NodeUntil:  emitUntil((Until *)node); break;
         case NodeWhile:  emitWhile((While *)node); break;
-        case NodeBreak:  emitBreak(node); break;
-        case NodeContinue: emitContinue(node); break;
+        case NodeBreak:  emitBreak(node); return nullptr;
+        case NodeContinue: emitContinue(node); return nullptr;
         case NodeReturn: builder->CreateRet(emitExpr(((Return *)node)->expr)); break;
         case NodeExit: builder->CreateRetVoid(); break;
         case NodeThrow: emitThrow((Throw *)node); break;

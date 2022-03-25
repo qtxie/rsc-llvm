@@ -7,7 +7,7 @@
 #ifdef NDEBUG
 constexpr int verbose = 0;
 #else
-constexpr int verbose = 0;
+constexpr int verbose = 1;
 #endif
 
 class Logger {

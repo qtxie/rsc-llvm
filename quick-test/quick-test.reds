@@ -81,7 +81,6 @@ qt-init-file: func [] [
 --test--: func [
   title [c-string!]
 ][
-  probe title
   qt-test-name: title
   qt-file/tests: qt-file/tests + 1
 ]

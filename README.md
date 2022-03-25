@@ -7,7 +7,7 @@ This is a quick and dirty implementation, for the following purposes:
 ### Usage
 
 ```
-redsc.exe -L.\baselibs\x64\ .\test\test.reds
+redsc.exe -L.\baselibs\x64\ -R.\src\runtime\ .\test\test.reds
 ```
 
 ### Build on Windows

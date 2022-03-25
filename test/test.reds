@@ -1,7 +1,5 @@
 Red/System []
 
-#include %../src/runtime/common.reds
-
 print-cmdline-args: func [
 	/local
 		args	[str-array!]
@@ -19,5 +17,3 @@ print-cmdline-args: func [
 ]
 
 print-cmdline-args
-
-quit 0

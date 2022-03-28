@@ -7,7 +7,20 @@ This is a quick and dirty implementation, for the following purposes:
 ### Usage
 
 ```
-redsc.exe -L.\baselibs\x64\ -R.\src\runtime\ .\test\test.reds
+redsc.exe -L.\baselibs\x64\ -R.\src\runtime\ .\examples\test.reds
+redsc.exe -L.\baselibs\x64\ -R.\src\runtime\ .\tests\integer-test.reds
+```
+
+### Download
+
+https://github.com/red/redsc/actions/workflows/windows.yml
+
+Click one of the workflow runs, there is an artifact `redsc-win-x64` on the page.
+
+### Dev Note
+Output LLVM IR:
+```
+redsc.exe --emit-llvm-ir filename.reds
 ```
 
 ### Build on Windows
@@ -34,9 +47,3 @@ redsc.exe -L.\baselibs\x64\ -R.\src\runtime\ .\test\test.reds
 
 ### Build on Linux
 TBD
-
-### Dev Note
-Output LLVM IR:
-```
-redsc.exe --emit-llvm-ir filename.reds
-```

@@ -5,6 +5,7 @@
  * https://github.com/red/red/blob/master/BSD-3-License.txt
 */
 
+#include <limits>
 #include "LexMap.h"
 #include "Parser.h"
 #include "CodeGen.h"
@@ -219,7 +220,7 @@ const Type * Parser::parseType(Token *tok, Token **rest, bool is_block, bool is_
     LOG() << type << " " << tok->str() << '\n';
     if (type) {  // alias type
         tok = tok->next;
-        if (type->id == TypeStructUnresolved && !is_collect && tok->id == TokenIdWord && tok->equals("value")) { // struct value
+        if (!is_collect && tok->id == TokenIdWord && tok->equals("value")) { // struct value
             resolveStruct((Type *)type, ctx);
             tok = tok->next;
         } else if ((type->id == TypeStruct || type->id == TypeStructUnresolved) && !isSizeOf) {
@@ -490,8 +491,15 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
         } else if (tok->id == TokenIdSetWord) {
             Type *elem = newNode<Type>(TypeInt, tok);
             cur = cur->next = elem;
-        } else if ((tok->id == TokenIdHex || tok->id == TokenIdInteger) && head.next) {
-            tok->toInteger(val);
+        } else if ((tok->id == TokenIdHex || tok->id == TokenIdInteger || tok->id == TokenIdWord) && head.next) {
+            if (tok->id == TokenIdWord) {
+                Context *ctx_out = nullptr;
+                Type *v = (Type *)findDecl(tok, &ctx_out);
+                if (v->id == TypeInt) val = v->data.value;
+                else comp.error(tok, err_invalid_enum, tok->str());
+            } else {
+                tok->toInteger(val);
+            }
             cur = head.next;
             do {
                 Type *elem = (Type *)cur;
@@ -501,6 +509,7 @@ Token * Parser::parseEnum(Token *tok, Context *ctx) {
                 elem->data.value = val;
                 addDecl(ctx, elem->tok, elem);
             } while (cur);
+            val++;
             head.next = nullptr;
             cur = &head;
         } else if (tok->id == TokenIdRBracket) {
@@ -610,6 +619,11 @@ const Type * Parser::analyzeMathType(BinaryOp *bin) {
         case tc_i_ii: 
         case tc_i_if:
         case tc_i_ff: bin->rhs = newCast(rhs, lhs_ty); break;
+        case tc_e_ff: 
+            if (rhs->id < TypeType) {
+                Type *ty = (Type *)rhs;
+                if (ty->data.fvalue <= FLT_MAX) ty->id = TypeFloat;
+            } break;
         case tc_fail: msg_id = err_conv_type; break;
         default: msg_id = err_no_implicit_conv; break;
         }
@@ -630,7 +644,7 @@ const Type * Parser::getPathType(Path *path) {
         if (type_id == NodeMemberAccess) {
             Member *m = (Member *)node->value;
             base_ty = m->type;
-        } else if (type_id == NodeVar || type_id == TypeInt) {
+        } else if (type_id == NodeIdent || type_id == TypeInt) {
             if (base_ty->id == TypeCStr) base_ty = &byteTy;
             else if (base_ty->id == TypePtr) base_ty = base_ty->data.type;
             else error(node, err_invalid_path);
@@ -660,10 +674,10 @@ const Type * Parser::analyzeNodeType(Node *node) {
         if (assign->type) return assign->type;
         else return addVarType(node);
     }
-    case NodeFnCall: {
-        analyzeType(((FnCall *)node)->args);   // type-checking for args
+    case NodeFnCall:
+        analyzeType(((FnCall *)node)->args);
         return ((FnCall*)node)->type->return_type;
-    }
+
     case NodeVar: return ((Variable*)node)->type;
     case NodeCast: {
         analyzeNodeType(((Cast *)node)->expr);
@@ -765,11 +779,8 @@ const Type * Parser::analyzeNodeType(Node *node) {
     case NodeDeclare:
         return ((TypedNode *)node)->type;
 
-    case NodeNot:    {
-        analyzeType(((Unary *)node)->value);
-        return &boolTy;
-    }
-
+    case NodeNot:    return analyzeNodeType(((Unary *)node)->value);
+    case NodeReturn: return analyzeNodeType(((Return*)node)->expr);
     case NodeSizeOf: return &uintTy;
     case NodeNull:   return &nullTy;
     case NodeIdent:  return ((Identifier *)node)->var->type;
@@ -1073,7 +1084,18 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
                     cur = cur->next = idx;
                 } else {
                     Context *ctx = nullptr;
-                    cur = cur->next = findVar(tok, &ctx);
+                    auto v = findVar(tok, &ctx);
+                    if (v->id == NodeVar) {
+                        auto ident = newNode<Identifier>(NodeIdent, tok);
+                        ident->var = v;
+                        cur = cur->next = ident;
+                    } else if (v->id == TypeInt) {  // enum
+                        Type *idx = newNode<Type>(TypeInt, tok);
+                        idx->data.value = ((Type *)v)->data.value;
+                        cur = cur->next = idx;
+                    } else {
+                        comp.error(tok, err_str_index);
+                    }
                 }
             } else {
                 comp.error(tok, err_str_index);
@@ -1109,17 +1131,36 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
     }
 }
 
-Node * Parser::checkArgType(Node *arg, Type *expected) {
-    assert(arg && expected);
-
-    const Type *ty = (const Type *)arg;
-    if (arg->id == NodeVar) {
-        ty = ((Variable *)arg)->type;
+Node * Parser::checkArgType(Node *arg, const Type *lhs_ty) {
+    auto rhs_ty = analyzeNodeType(arg);
+    if (lhs_ty->id == TypeFuncTy) {
+        if (rhs_ty->id == TypePtr) return arg;
+        else error(arg, err_expected, "function pointer!");
     }
-    LOG() << NodeName[ty->id] << " " << NodeName[expected->id] << '\n';
-    const auto res = (ty->id == expected->id) ? tc_same : TypeConv[ty->id][expected->id];
-    if (res > tc_i_ff)
-        comp.error(arg->tok, err_expected_type, TypeName[expected->id], TypeName[ty->id]);
+    if (lhs_ty->id == TypeCStr) {
+        if (rhs_ty->id == TypeCStr || rhs_ty->id == TypeNull) return arg;
+        else error(arg, err_expected, "c-string!");
+    }
+
+    auto result = TypeConv[rhs_ty->id][lhs_ty->id];
+    auto msg_id = note_no_error;
+    switch (result)
+    {
+    case tc_same: break;
+    case tc_i_ii: 
+    case tc_i_if:
+    case tc_i_ff: arg = newCast(arg, lhs_ty); break;
+    case tc_e_ff:
+        if (arg->id < TypeType) {
+            Type *ty = (Type *)arg;
+            if (ty->data.fvalue <= FLT_MAX) ty->id = TypeFloat;
+        } break;
+    case tc_fail: msg_id = err_conv_type; break;
+    default: msg_id = err_no_implicit_conv; break;
+    }
+    if (msg_id != note_no_error)
+        error(arg, msg_id, TypeName[rhs_ty->id], TypeName[lhs_ty->id]);
+
     return arg;
 }
 
@@ -1150,7 +1191,7 @@ Node * Parser::parseFnCall(FuncType *ftype, Function *fn, Token *tok, Token **re
         if (ftype->isThrowable()) param = param->next;
         while (param) {
             auto arg = parseExpr(tok->next, &tok);
-            cur = cur->next = arg; //checkArgType(arg, (Type *)param);
+            cur = cur->next = checkArgType(arg, ((Variable *)param)->type);
             param = param->next;
         }
     }
@@ -1346,9 +1387,8 @@ Node * Parser::parseString(Token *tok) {
 Node * Parser::parseCast(Token *tok, Token **rest) {
     auto node = newNode<Cast>(NodeCast, tok);
     tok = tok->next;
-    LOG() << tok->str() << '\n';
+
     node->type = parseType(tok, &tok, tok->id == TokenIdLBracket);
-    LOG() << TypeName[node->type->id] << '\n';
     if (tok->id == TokenIdWord && tok->equals("keep")) {
         node->is_signed = true;     // reuse this field
     }
@@ -1375,6 +1415,14 @@ Node * Parser::parseNot(Token *tok, Token **rest) {
 Node * Parser::parseSizeOf(Token *tok, Token **rest) {
     tok = tok->next;
     auto node = newNode<Unary>(NodeSizeOf, tok);
+
+    // size? pointer!
+    if (tok->id == TokenIdWord && tok->equals("pointer!") && tok->next->id != TokenIdLBracket) {
+        *rest = tok;
+        node->value = &uintPtrTy;
+        return node;
+    }
+
     isSizeOf = true;
     auto ty = parseType(tok, rest, false, true, false);
     isSizeOf = false;
@@ -1443,8 +1491,12 @@ Node * Parser::parseUnaryExpr(Token *tok, Token **rest) {
         case TokenIdFloat:
             ty = newNode<Type>(TypeDouble, tok);
             node = ty;
-            if (tok->toDouble(ty->data.fvalue))
+            if (tok->flags & TKFlagSpecialFloat) {
+                if (tok->equals("1.#inf")) ty->data.fvalue = std::numeric_limits<double>::infinity();
+                else if (tok->equals("1.#nan")) ty->data.fvalue = std::numeric_limits<double>::quiet_NaN();
+            } else if (tok->toDouble(ty->data.fvalue)) {
                 comp.error(tok, err_float_overflow);
+            }
             break;
         case TokenIdByte:
             node = parseByte(tok);

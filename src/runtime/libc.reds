@@ -180,8 +180,8 @@ zero-alloc: func [
 		i
 	]
 
-	prin-hex: func [i [integer!] return: [integer!]][
-		printf ["%08X" i]
+	prin-hex: func [i [int-ptr!] return: [int-ptr!]][
+		printf ["%p" i]
 		i
 	]
 

@@ -75,15 +75,16 @@ llvm::Value * CodeGen::getElementPtr(Path *path) {
         indices.push_back(llvm::ConstantInt::get(i32_ty, 0));
 
     Variable *var = (Variable *)path->first;
+    auto var_ty = var->type;
     LOG() << var->tok->str() << ' ' << TypeName[var->type->id] << '\n';
 
     llvm::Type *ty;
     llvm::Value *ptr;
-    if (var->type->id == TypeStruct) {
+    if (var_ty->id == TypeStruct || (var->hasAttr(VarGlobal) && var_ty->id == TypePtr)) {
         ptr = var->ir;
-        ty = ptr->getType()->getPointerTo();
+        ty = ptr->getType();
     } else {
-        ptr = readVariable(var);
+        ptr = builder->CreateLoad(var->ir);
         ty = ptr->getType();
     }
     ty = ty->getPointerElementType();
@@ -98,8 +99,8 @@ llvm::Value * CodeGen::getElementPtr(Path *path) {
             Member *m = (Member *)node->value;
             type_id = m->type->id;
             indices.push_back(llvm::ConstantInt::get(i32_ty, m->idx));
-        } else if (type_id == NodeVar) {
-            auto idx = readVariable((Variable *)node);
+        } else if (type_id == NodeIdent) {
+            auto idx = readVariable(((Identifier *)node)->var);
             idx = builder->CreateNSWSub(idx, llvm::ConstantInt::get(i32_ty, 1));
             indices.push_back(idx);
         } else if (type_id == TypeInt) {
@@ -198,14 +199,14 @@ llvm::Value * CodeGen::emitEither(Either *node) {
 
     setCurrentBasicBlock(if_then);
     auto val = emitCode(node->then_body);
-    if (result) builder->CreateStore(val, result->ir);
+    if (val && result) builder->CreateStore(val, result->ir);
     if (!curBB->getTerminator())
         builder->CreateBr(after_if);
 
     setCurrentBasicBlock(if_else);
     if (node->else_body) {
         val = emitCode(node->else_body);
-        if (result) builder->CreateStore(val, result->ir);
+        if (val && result) builder->CreateStore(val, result->ir);
     }
     if (!curBB->getTerminator())
         builder->CreateBr(after_if);
@@ -413,8 +414,8 @@ llvm::Value * CodeGen::emitCall(FnCall *call) {
                 case 3: val = builder->CreateIntCast(val, i32_ty, false); break;
                 case 4: ptr = builder->CreateBitCast(ptr, f32_ty->getPointerTo()); break;
                 case 5: ptr = builder->CreateBitCast(ptr, f64_ty->getPointerTo()); break;
-                case 6: case 8: 
-                    ptr = builder->CreateBitCast(ptr, byte_ty->getPointerTo()->getPointerTo()); break;
+                case 6: ptr = builder->CreateBitCast(ptr, byte_ty->getPointerTo()->getPointerTo()); break;
+                case 8: ptr = builder->CreateBitCast(ptr, llvmType(ty)->getPointerTo()); break;
                 default:
                     break;
                 }
@@ -495,7 +496,7 @@ llvm::Value * CodeGen::emitBinOp(Node *node) {
         case NodeRemainder:  return builder->CreateFRem(left, right);
         // case NodeModulo:     return builder->Create(left, right);
         case NodeEq:         return builder->CreateFCmpOEQ(left, right);
-        case NodeNotEq:      return builder->CreateFCmpONE(left, right);
+        case NodeNotEq:      return builder->CreateFCmpUNE(left, right);
         case NodeLess:       return builder->CreateFCmpOLT(left, right);
         case NodeLessEq:     return builder->CreateFCmpOLE(left, right);
         case NodeGreater:    return builder->CreateFCmpOGT(left, right);
@@ -598,9 +599,10 @@ llvm::Value * CodeGen::emitCast(Cast *node) {
     auto to_ty = llvmType(node->type);
     LOG() << node->tok->next->str() << " " << TypeName[node->type->id] << '\n';
     if (ty->isIntegerTy()) {
-        if (to_ty->isFloatingPointTy()) return builder->CreateSIToFP(val, to_ty);
-        if (to_ty->isIntegerTy()) return builder->CreateIntCast(val, to_ty, true);
-        if (to_ty->isPointerTy()) return builder->CreateIntToPtr(val, to_ty);
+        bool is_signed = ty->isIntegerTy(32);
+        if (to_ty->isFloatingPointTy()) return is_signed ? builder->CreateSIToFP(val, to_ty) : builder->CreateUIToFP(val, to_ty);
+        if (to_ty->isIntegerTy()) return builder->CreateIntCast(val, to_ty, is_signed);
+        if (to_ty->isPointerTy()) return builder->CreateIntToPtr(builder->CreateIntCast(val, i64_ty, true), to_ty);
     } else if (ty->isFloatingPointTy()) {
         if (to_ty->isFloatingPointTy()) return builder->CreateFPCast(val, to_ty);
         if (to_ty->isIntegerTy()) return builder->CreateFPToSI(val, to_ty);
@@ -630,9 +632,9 @@ llvm::Value * CodeGen::emitSizeOf(Unary *node) {
 llvm::Value * CodeGen::emitDeclare(TypedNode *node) {
     auto ty = node->type;
     bool is_struct = false;
-    if (ty->id == TypePtr && ty->data.type->id == TypeStruct) {
+    if (ty->id == TypePtr) {
         ty = ty->data.type;
-        is_struct = true;
+        is_struct = (ty->id == TypeStruct);
     }
     auto type = llvmType(ty);
     auto linkage = node->is_signed ? GlobalValue::InternalLinkage : GlobalValue::PrivateLinkage;
@@ -661,6 +663,7 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
     case NodePtr:          val = getPointer(((Pointer *)node)->value); break;
     case TypeInt:          val = getConstantInt(node); break;
     case TypeByte:         val = getConstantInt(node); break;
+    case TypeFloat:
     case TypeDouble:       val = getConstantFloat(node); break;
     case TypeCStr:         val = createCString(node); break;
     case TypeBool:         {
@@ -700,24 +703,26 @@ llvm::Value * CodeGen::emitAssignment(Assignment *node) {
     assert(val != nullptr);
 LOG() << node->lhs->tok->str() << '\n';
     if (dest_id == NodeVar && left->hasAttr(VarGlobal)) {
-        if (left->type->id == TypePtr) {
+        auto ty = left->type;
+        if (ty->id == TypePtr) {
             left->ir = val;
             return nullptr;
         } else {
             if (dest == nullptr) {
-                auto var = emitGlobalVar(left, left->type);
+                if (ty->id == TypePtr) ty = ty->data.type;
+                auto var = emitGlobalVar(left, ty);
                 if (llvm::isa<llvm::Constant>(val)) {
                     var->setInitializer(llvm::cast<llvm::Constant>(val));
                     return val;
                 } else {
-                    var->setInitializer(llvm::Constant::getNullValue(llvmType(left->type)));
+                    var->setInitializer(llvm::Constant::getNullValue(llvmType(ty)));
                     dest = var;
                 }
             }
         }
     }
 
-    if (node->rhs->id == NodeNull) {
+    if (val->getType()->isPointerTy()) {
         val = builder->CreateBitCast(val, dest->getType()->getPointerElementType());
     }
     builder->CreateStore(val, dest);
@@ -761,8 +766,8 @@ llvm::Value * CodeGen::emitCode(Node *node) {
         case NodeWhile:  emitWhile((While *)node); break;
         case NodeBreak:  emitBreak(node); return nullptr;
         case NodeContinue: emitContinue(node); return nullptr;
-        case NodeReturn: builder->CreateRet(emitExpr(((Return *)node)->expr)); break;
-        case NodeExit: builder->CreateRetVoid(); break;
+        case NodeReturn: builder->CreateRet(emitExpr(((Return *)node)->expr)); return nullptr;
+        case NodeExit: builder->CreateRetVoid(); return nullptr;
         case NodeThrow: emitThrow((Throw *)node); break;
         case NodeCatch: emitCatch((Catch *)node); break;
         case NodeAssign: val = emitAssignment((Assignment *)node); break;

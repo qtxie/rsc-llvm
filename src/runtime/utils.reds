@@ -81,7 +81,7 @@ _print: func [
 			type-float32!  [fp32: as typed-float32! list unused32: prin-float32 fp32/value]
 			type-byte!     [prin-byte as-byte list/value]
 			type-c-string! [ptr: as typed-ptr! list s: as-c-string ptr/value prin s]
-			default 	   [prin-hex list/value]
+			default 	   [ptr: as typed-ptr! list prin-hex ptr/value]
 		]
 		count: count - 1
 		

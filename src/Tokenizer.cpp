@@ -489,6 +489,7 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                 (0 == inf.compare_insensitive(s) || 0 == nan.compare_insensitive(s)) && IS_LEX_DELIMIT(p[6])
             ) {
                 ADD_TOK(TokenIdFloat, p, 6);
+                cur->flags |= TKFlagSpecialFloat;
                 continue;
             }
 

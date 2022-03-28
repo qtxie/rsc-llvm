@@ -333,7 +333,7 @@ private:
 
     Unary *getStructMember(const Type *st, Token *tok);
 
-    Node * checkArgType(Node *arg, Type *expected);
+    Node * checkArgType(Node *arg, const Type *expected);
 
     void addCurFuncAttr(FuncAttr attr) {
         using namespace llvm;

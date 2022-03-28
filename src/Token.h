@@ -19,6 +19,7 @@ enum TokenId : uint8_t {
 };
 
 #define TkFlagEscapedString  1
+#define TKFlagSpecialFloat   2
 
 typedef SmallVector<StringRef> Hideset;
 

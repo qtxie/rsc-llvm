@@ -109,7 +109,7 @@ private:
     }
 
     llvm::Constant * getConstantFloat(Node *node) {
-        return llvm::ConstantFP::get(f64_ty, ((Type *)node)->data.fvalue);
+        return llvm::ConstantFP::get(node->id == TypeFloat ? f32_ty : f64_ty, ((Type *)node)->data.fvalue);
     }
 
     llvm::StructType * createStruct(Struct *st);

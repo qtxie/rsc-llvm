@@ -99,6 +99,7 @@ public:
     void emit(Context *prog);
 
     llvm::SmallSet<StringRef, 4> import_libs;
+    StringMap<Function *> importNames;
 
 private:
     void mangleName(Token *tok, Context *ctx, std::string &result);

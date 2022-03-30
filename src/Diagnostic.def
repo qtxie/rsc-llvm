@@ -41,6 +41,7 @@ DIAG(err_cannot_declared, Error, "declaring a {0} at this level is not allowed")
 DIAG(err_symbol_declared, Error, "symbol {0} already declared")
 DIAG(err_types_for_operator_not_compatible, Error, "types not compatible for operator {0}")
 DIAG(err_undeclared_name, Error, "undeclared name {0}")
+DIAG(err_undeclared_ns, Error, "undeclared context {0}")
 
 DIAG(err_type_not_compatible, Error, "type of formal and actual parameter are not compatible")
 DIAG(err_requires_return, Error, "Function requires RETURN with value")

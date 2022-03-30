@@ -142,9 +142,12 @@ Variable * Parser::addVar(Context *ctx, Token *name, Variable *var, bool is_loca
     if (!var) var = newNode<Variable>(NodeVar, name);
     auto& vars = ctx->decls;
     auto const & [keyval, is_new] = vars.insert({name->str(), var});
-    if (is_new && !is_local) var->addAttr(VarGlobal);
-    if (!is_new && is_local)
-        comp.error(name, err_symbol_declared, name->str());
+    if (!is_new) {
+        if (is_local) comp.error(name, err_symbol_declared, name->str());
+        else var = (Variable *)keyval->second;
+    } else if (is_new && !is_local) {
+        var->addAttr(VarGlobal);
+    }
     return var;
 }
 
@@ -155,8 +158,7 @@ void Parser::addDecl(Context *ctx, Token *name, Node *node) {
         comp.error(name, err_symbol_declared, name->str());
 }
 
-Node * Parser::findDecl(Token *name, Context **ctx_out) {
-    auto ctx = curCtx;
+static Node * _findDecl(Token *name, Context *ctx, Context **ctx_out, bool bubble) {
     do {
         auto& decls = ctx->decls;
         auto it = decls.find(name->str());
@@ -164,14 +166,30 @@ Node * Parser::findDecl(Token *name, Context **ctx_out) {
             *ctx_out = ctx;
             return it->second;
         } else {
-            ctx = ctx->parent;
+            if (bubble) ctx = ctx->parent;
+            else return nullptr;
         }
     } while (ctx);
     return nullptr;
 }
 
-Variable * Parser::findVar(Token *name, Context **ctx_out) {
-    return (Variable *)findDecl(name, ctx_out);
+Node * Parser::findDecl(Token *name, Context **ctx_out, Context *ctx) {
+    LOG() << name->str() << ' ' << ctx << ' ' << withNS.empty() << '\n';
+    if (ctx) return _findDecl(name, ctx, ctx_out, false);
+    if (withNS.empty()) {
+        return _findDecl(name, curCtx, ctx_out, true);
+    } else {
+        for (auto &ctx : withNS) {
+            LOG() << name->str() << ' ' << ctx->tok->str() << '\n';
+            if (auto v = _findDecl(name, ctx, ctx_out, false))
+                return v;
+        }
+    }
+    return nullptr;
+}
+
+Variable * Parser::findVar(Token *name, Context **ctx_out, Context *ctx) {
+    return (Variable *)findDecl(name, ctx_out, ctx);
 }
 
 Context * Parser::findContext(Token *tok) {
@@ -185,12 +203,12 @@ Context * Parser::findContext(Token *tok) {
 constexpr auto genDatatypes()
 {
     std::array<std::pair<StringRef, Type>, 6> datatypes = {{
-        {"byte!", Type{TypeByte, false, 1, 1, nullptr, nullptr, TypeByte}},
-        {"c-string!", Type{TypeCStr, false, 8, 8, nullptr, nullptr, TypePtr}},
-        {"float!", Type{TypeDouble, false, 8, 8, nullptr, nullptr, TypeDouble}},
-        {"float32!", Type{TypeFloat, false, 4, 4, nullptr, nullptr, TypeFloat}},
-        {"integer!", Type{TypeInt, true, 4, 4, nullptr, nullptr, TypeInt}},
-        {"logic!", Type{TypeBool, false, 1, 1, nullptr, nullptr, TypeBool}},
+        {"byte!", Type{TypeByte, false, 1, 1, 0, nullptr, nullptr, TypeByte}},
+        {"c-string!", Type{TypeCStr, false, 8, 8, 0, nullptr, nullptr, TypePtr}},
+        {"float!", Type{TypeDouble, false, 8, 8, 0, nullptr, nullptr, TypeDouble}},
+        {"float32!", Type{TypeFloat, false, 4, 4, 0, nullptr, nullptr, TypeFloat}},
+        {"integer!", Type{TypeInt, true, 4, 4, 0, nullptr, nullptr, TypeInt}},
+        {"logic!", Type{TypeBool, false, 1, 1, 0, nullptr, nullptr, TypeBool}},
     }};
     return datatypes;
 }
@@ -254,7 +272,7 @@ Token * Parser::parseLocal(Token *tok, Function *func) {
     Token ident{};
     Token *t = &ident;
     while (tok->id != TokenIdRBracket) {
-        if (tok->id == TokenIdWord) {
+        if (tok->id == TokenIdWord || tok->sub_id == TokenIdKeyword) {
             t = t->next = tok;
             tok = tok->next;
             n++;
@@ -545,6 +563,23 @@ bool Parser::resolveStruct(Type *ty, Context *ctx) {
     return false;
 }
 
+void Parser::resolveFuncSpec(Type *ty) {
+    Token *spec = nullptr;
+    FuncType *ftype = nullptr;
+    Function *fn = nullptr;
+    if (ty->id == TypeFuncUnresolved) {
+        fn = (Function *)ty;
+        spec = fn->type->spec;
+    } else if (ty->id == TypeFuncTy) {
+        ftype = (FuncType *)ty;
+        spec = ftype->spec;
+    }
+    if (spec) {
+        parseFuncSpec(spec, ftype, fn);
+        if (fn) dumpFunction(fn);
+    }
+}
+
 void Parser::resolveDeclarations(Context *ctx) {
     curCtx = ctx;
     for (auto const &val : ctx->decls) {
@@ -554,20 +589,7 @@ void Parser::resolveDeclarations(Context *ctx) {
             curCtx = ctx;
         } else {
             // if (ty->id == TypePtr) ;
-            Token *spec = nullptr;
-            FuncType *ftype = nullptr;
-            Function *fn = nullptr;
-            if (ty->id == TypeFuncUnresolved) {
-                fn = (Function *)ty;
-                spec = fn->type->spec;
-            } else if (ty->id == TypeFuncTy) {
-                ftype = (FuncType *)ty;
-                spec = ftype->spec;
-            }
-            if (spec) {
-                parseFuncSpec(spec, ftype, fn);
-                if (fn) dumpFunction(fn);
-            }
+            resolveFuncSpec(ty);
         }
     }
 }
@@ -581,6 +603,7 @@ const Type * Parser::addVarType(Node *node) {
             Variable *var = (Variable *) assign->lhs;
             auto rhs = assign->rhs;
             if (rhs->id == NodeDeclare) {
+                var->addAttr(VarDeclare);
                 rhs->tok = var->tok;
                 rhs->is_signed = var->hasAttr(VarGlobal);
             }
@@ -780,7 +803,12 @@ const Type * Parser::analyzeNodeType(Node *node) {
         return ((TypedNode *)node)->type;
 
     case NodeNot:    return analyzeNodeType(((Unary *)node)->value);
-    case NodeReturn: return analyzeNodeType(((Return*)node)->expr);
+    case NodeReturn: {
+        auto ret = (Return*)node;
+        auto ret_ty = curFunc->type->return_type;
+        ret->expr = checkArgType(ret->expr, ret_ty);
+        return ret_ty;
+    }
     case NodeSizeOf: return &uintTy;
     case NodeNull:   return &nullTy;
     case NodeIdent:  return ((Identifier *)node)->var->type;
@@ -849,33 +877,35 @@ void Parser::analyzeCalls(Function *fn) {
     }
 }
 
+void Parser::parseFunc(Function *fn, Context *ctx) {
+    if (fn->id == TypeFunc && fn->type->tid == 0) {
+        fn->type->tid = curTypeId++;
+        Context fn_ctx = {};
+        fn_ctx.func = fn;
+        fn_ctx.parent = ctx;
+
+        // add params and local variables in function context
+        auto add_into_fn_ctx = [this, &fn_ctx](Node *node) {
+            while (node) {
+                addVar(&fn_ctx, node->tok, (Variable *)node, true);
+                node = node->next;
+            }
+        };
+        add_into_fn_ctx(fn->type->params);
+        add_into_fn_ctx(fn->locals);
+        if (fn->body.token) fn->body.node = parseCodeBlock(fn->body.token, &fn_ctx, true);
+        curCtx = ctx;
+    } else if (fn->id == NodeContext) {
+        parseFunctions((Context* )fn);
+        curCtx = ctx;
+    }
+}
+
 void Parser::parseFunctions(Context *ctx) {
     curCtx = ctx;
     for (auto const &val : ctx->decls) {
         Function *fn = (Function *)val.second;
-        if (fn->id == TypeFunc && fn->type->tid == 0) {
-            fn->type->tid = curTypeId++;
-            Context fn_ctx = {};
-            fn_ctx.func = fn;
-            fn_ctx.parent = ctx;
-
-            // add params and local variables in function context
-            auto add_into_fn_ctx = [this, &fn_ctx](Node *node) {
-                while (node) {
-                    addVar(&fn_ctx, node->tok, (Variable *)node, true);
-                    node = node->next;
-                }
-            };
-            add_into_fn_ctx(fn->type->params);
-            add_into_fn_ctx(fn->locals);
-    LOG() << fn->tok->str() << "....Start\n";
-            if (fn->body.token) fn->body.node = parseCodeBlock(fn->body.token, &fn_ctx, true);
-    LOG() << fn->tok->str() << "....End.....\n";
-            curCtx = ctx;
-        } else if (fn->id == NodeContext) {
-            parseFunctions((Context* )fn);
-            curCtx = ctx;
-        }
+        parseFunc(fn, ctx);
     }
 }
 
@@ -951,6 +981,10 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block, boo
                 else if (cur->id == TokenIdSetWord)
                     comp.error(cur, err_invalid_cascade, tok->next->str());
                 addDecl(ctx, tok, node);
+                if (node->id != NodeContext && !withStack.empty()) {
+                    auto with = withStack.back();
+                    with->decls.push_back(node);
+                }
                 skip_decl = true;
             }
             break;
@@ -962,6 +996,32 @@ Token * Parser::collectDeclarations(Token *tok, Context *ctx, bool is_block, boo
             rest = parseImport(tok, ctx);
             skip_decl = true;
             break;
+        case TokenIdWith: {
+            auto with_tok = tok;
+            auto with = new WithDecl();
+            with->ctx = ctx;
+            withDecls.push_back(with);
+            withStack.push_back(with);
+            tok = tok->next;
+            if (tok->id == TokenIdWord) {
+                with->ns.push_back(tok);
+            } else if (tok->id == TokenIdLBracket) {
+                tok = tok->next;
+                while (tok->id != TokenIdRBracket) {
+                    if (tok->id != TokenIdWord) comp.error(tok, err_undeclared_ns, tok->str());
+                    with->ns.push_back(tok);
+                    tok = tok->next;
+                }
+            }
+            for (auto it = withStack.rbegin(); it != withStack.rend(); ++it) {
+                with->ns.append((*it)->ns);
+            }
+            rest = collectDeclarations(tok->next, ctx, true, is_func_ctx);
+            withStack.pop_back();
+            tok = with_tok;
+            skip_decl = true;
+        } break;
+
         case TokenIdLBracket: 
             bracket.push_back({tok, paren.size()}); break;
         case TokenIdRBracket:
@@ -1025,14 +1085,20 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
     Variable *var = nullptr;
     Context *saved_ctx = curCtx;
     is_setpath = false;
+    bool is_root = false;
 
     // resolve first word in the path
+    Context *ctx = nullptr;
     do {
-        Context *ctx = nullptr;
-        var = findVar(tok, &ctx);
+        Context *ctx_out = nullptr;
+        var = findVar(tok, &ctx_out, ctx);
         if (var) {
-            if (var->id == NodeContext) curCtx = (Context *)var;
-            else break;
+            if (var->id == NodeContext) {
+                ctx = (Context *)var;
+            } else {
+                is_root = ctx_out->is_root;
+                break;
+            }
         } else {
             comp.error(tok, err_undeclared_name, tok->str());
         }
@@ -1053,6 +1119,23 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
     Node head{};
     Node *cur = &head;
     LOG() << tok->str() << " " << TypeName[type_id] << '\n';
+
+    // special case for system/*
+    if (is_root && tok->equals("system")) {
+        auto t = tok->next;
+        if (t->id == TokenIdSlash && t->next->equals("words")) {
+            t = t->next->next;
+            if (t->id == TokenIdSlash && t->next->id == TokenIdWord || t->next->id == TokenIdSetWord) {
+                tok = t->next;
+                Context *ctx_out = nullptr;
+                if (var = (Variable *)_findDecl(tok, globalCtx, &ctx_out, false))
+                    goto label_end;
+                else
+                    comp.error(t, err_undeclared_name, t->str());
+            }
+        }
+    }
+
     while (tok->next->id == TokenIdSlash) {
         if (type_id == TypePtr && ty->data.type->id == TypeStruct) {
             type_id = TypeStruct;
@@ -1115,6 +1198,7 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
         }
     }
 
+label_end:
     is_setpath = (tok->id == TokenIdSetWord);
     *rest = tok;
     // for case: `a/keyword:` or `a/(n + 1):`
@@ -1133,12 +1217,17 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
 
 Node * Parser::checkArgType(Node *arg, const Type *lhs_ty) {
     auto rhs_ty = analyzeNodeType(arg);
+    if (lhs_ty->id == TypeStruct) {
+        arg->flags |= NodeFlagStruct;
+        return arg;
+    }
     if (lhs_ty->id == TypeFuncTy) {
         if (rhs_ty->id == TypePtr) return arg;
         else error(arg, err_expected, "function pointer!");
     }
     if (lhs_ty->id == TypeCStr) {
-        if (rhs_ty->id == TypeCStr || rhs_ty->id == TypeNull) return arg;
+        if (rhs_ty->id == TypeCStr) return arg;
+        else if (rhs_ty->id == TypeNull) return newCast(arg, lhs_ty);
         else error(arg, err_expected, "c-string!");
     }
 
@@ -1146,7 +1235,9 @@ Node * Parser::checkArgType(Node *arg, const Type *lhs_ty) {
     auto msg_id = note_no_error;
     switch (result)
     {
-    case tc_same: break;
+    case tc_same:
+        if (rhs_ty->id == TypeNull) arg = newCast(arg, lhs_ty); 
+        break;
     case tc_i_ii: 
     case tc_i_if:
     case tc_i_ff: arg = newCast(arg, lhs_ty); break;
@@ -1450,6 +1541,7 @@ Node * Parser::parseUnaryExpr(Token *tok, Token **rest) {
     bool is_set;
     switch (tok->id) {
         case TokenIdWord:
+        label_word:
             LOG() << tok->str() << '\n';
             node = findDecl(tok, &ctx);
             if (!node) comp.error(tok, err_undeclared_name, tok->str());
@@ -1526,6 +1618,7 @@ Node * Parser::parseUnaryExpr(Token *tok, Token **rest) {
         case TokenIdFunc:  // anonymous function
         case TokenIdAlias:
         default:
+            if (tok->sub_id == TokenIdKeyword) goto label_word;
             break;
     }
     *rest = tok;
@@ -1546,15 +1639,21 @@ Node * Parser::parseAssignment(Token *tok, Token **rest, bool is_in_func) {
     Context *ctx = nullptr;
     Node *node = nullptr;
     bool is_set = false;
-    if (tok->id == TokenIdSetWord) {
+    if (tok->id == TokenIdSetWord || (tok->sub_id == TokenIdKeyword && tok->next->id == TokenIdSetColon)) {
         Context *ctx;
         node = findVar(tok, &ctx);
-        if (!node) {
-            if (is_in_func) comp.error(tok, err_undeclared_name, tok->str());
-            node = addVar(curCtx, tok);
-        } else if (node->id != NodeVar) {
-            comp.error(tok, err_symbol_declared, tok->str());
+        if (is_in_func) {
+            if (!node) {
+                comp.error(tok, err_undeclared_name, tok->str());
+            } else if (node->id != NodeVar) {
+                comp.error(tok, err_symbol_declared, tok->str());
+            }
+        } else {    // in a context
+            if (withNS.empty()) node = nullptr;
+            node = addVar(curCtx, tok, (Variable *)node);
         }
+
+        if (tok->sub_id == TokenIdKeyword) tok = tok->next;
         is_set = true;
     } else if (tok->id == TokenIdPath) {
         node = parsePath(tok, &tok, is_set);
@@ -1776,8 +1875,44 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_func_bo
         case TokenIdThrow: node = parseThrow(tok, &tok); break;
         case TokenIdCatch: node = parseCatch(tok, &tok); break;
         case TokenIdExit: node = parseExit(tok, &tok); break;
+        case TokenIdWith: {
+            auto saved_ns = withNS.size();
+            tok = tok->next;
+            SmallVector<Context *> ns_vec;
+            if (tok->id == TokenIdWord) {
+                auto ns = findContext(tok);
+                if (!ns) comp.error(tok, err_undeclared_ns, tok->str());
+                ns_vec.push_back(ns);
+            } else if (tok->id == TokenIdLBracket) {
+                tok = tok->next;
+                while (tok->id != TokenIdRBracket) {
+                    auto ns = findContext(tok);
+                    if (ns == nullptr) comp.error(tok, err_undeclared_ns, tok->str());
+                    ns_vec.push_back(ns);
+                    tok = tok->next;
+                }
+            }
+            if (!saved_ns) {
+                withNS.append(ns_vec.rbegin(), ns_vec.rend());
+                withNS.push_back(curCtx);
+            } else {
+                withNS.insert(withNS.begin(), ns_vec.rbegin(), ns_vec.rend());
+            }
+            node = parseCode(tok->next, &tok, ctx, is_func_body);
 
-        case TokenIdWith:
+            if (saved_ns) withNS.erase(withNS.begin(), withNS.begin() + ns_vec.size());
+            else withNS.clear();
+
+            curCtx = ctx;
+            tok = tok->next;
+            cur->next = node;
+            while (node) {
+                cur = node;
+                node = node->next;
+            }
+            continue;
+        }
+
         case TokenIdUse: tok = tok->next; break;
         case TokenIdRBracket:
             if (is_block) {
@@ -1822,6 +1957,31 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_func_bo
     return head.next;
 }
 
+void Parser::resolveWithDeclarations(Context *ctx, bool parse_func) {
+    SmallVector<Context *> ns_vec;
+    for (auto with : withDecls) {
+        for (auto name : with->ns) {
+            auto ns = findContext(name);
+            if (!ns) comp.error(name, err_undeclared_ns, name->str());
+            ns_vec.push_back(ns);
+        }
+        withNS.append(ns_vec);
+        withNS.push_back(with->ctx);
+        withNS.push_back(globalCtx);
+        for (auto node : with->decls) {
+            if (parse_func && node->id == TypeFunc) {
+                parseFunc((Function *)node, ctx);
+            } else {
+                Type *ty = (Type *)node;
+                if (!resolveStruct(ty, ctx)) {
+                    resolveFuncSpec(ty);
+                }
+            }
+        }
+        withNS.clear();
+    }
+}
+
 Node * Parser::parseCodeBlock(Token *tok, Context *ctx, bool is_func_body) {
     (LOG() << "start\n").indent();
 
@@ -1831,6 +1991,7 @@ Node * Parser::parseCodeBlock(Token *tok, Context *ctx, bool is_func_body) {
 
     dumpTokens(tok, "After collectDeclarations");
 
+    resolveWithDeclarations(ctx, false);
     // resolve struct and function spec
     resolveDeclarations(ctx);
 
@@ -1840,6 +2001,7 @@ Node * Parser::parseCodeBlock(Token *tok, Context *ctx, bool is_func_body) {
 
     dumpAst(ast);
 
+    resolveWithDeclarations(ctx, true);
     parseFunctions(ctx);
 
     curCtx = ctx;
@@ -1853,7 +2015,7 @@ Node * Parser::parseCodeBlock(Token *tok, Context *ctx, bool is_func_body) {
 }
 
 Context * Parser::parse(Token *tok) {
-    Context *ctx = newContext(tok);
+    Context *ctx = globalCtx = newContext(tok);
     Function *mainFunc = newFunction(tok);
     mainFunc->type->return_type = &voidTy;
     ctx->is_root = true;

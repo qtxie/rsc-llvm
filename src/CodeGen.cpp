@@ -398,6 +398,7 @@ llvm::Value * CodeGen::emitCall(FnCall *call) {
         while (args) {
             auto ty = parser->analyzeNodeType(args);
             int id = typed_id[ty->id];
+            LOG() << id << '\n';
             if (id > 0) {
                 idx[0] = llvm::ConstantInt::get(i32_ty, i++);
                 idx[1] = llvm::ConstantInt::get(i32_ty, 0);
@@ -415,7 +416,7 @@ llvm::Value * CodeGen::emitCall(FnCall *call) {
                 case 4: ptr = builder->CreateBitCast(ptr, f32_ty->getPointerTo()); break;
                 case 5: ptr = builder->CreateBitCast(ptr, f64_ty->getPointerTo()); break;
                 case 6: ptr = builder->CreateBitCast(ptr, byte_ty->getPointerTo()->getPointerTo()); break;
-                case 8: ptr = builder->CreateBitCast(ptr, llvmType(ty)->getPointerTo()); break;
+                case 8: ptr = builder->CreateBitCast(ptr, val->getType()->getPointerTo()); break;
                 default:
                     break;
                 }
@@ -431,6 +432,8 @@ llvm::Value * CodeGen::emitCall(FnCall *call) {
             auto v = emitExpr(args);
             if (args->id == NodeNull) {
                 v = builder->CreateBitCast(v, fn_ty->ir->getParamType(n));
+            } else if (v->getType()->isPointerTy() && (args->flags & NodeFlagStruct)) {
+                v = builder->CreateLoad(v->getType()->getPointerElementType(), v);
             }
             argv.push_back(v);
             args = args->next;
@@ -808,20 +811,34 @@ void CodeGen::mangleName(Token *tok, Context *ctx, std::string &result) {
 }
 
 llvm::Value * CodeGen::createFunc(Function *fn, Context *ctx) {
-    auto func_ty = createFuncType(fn->type);
+    bool has_created = false;
+    llvm::Function *func;
     std::string name;
-    if (fn->import_lib) name = fn->import_name->str().str();
-    else mangleName(fn->import_name, ctx, name);
-    auto linkage = fn->isExtern() ? GlobalValue::ExternalLinkage : GlobalValue::InternalLinkage;
-    auto func = llvm::Function::Create(func_ty, linkage, name, *M);
-    //func->addFnAttr(llvm::Attribute::NoBuiltin);
-    fn->ir = func;
+    if (fn->import_lib) {
+        name = fn->import_name->str().str();
+        auto it = importNames.find(name);
+        if (it != importNames.end()) {
+            has_created = true;
+            auto f = it->second;
+            fn->type->ir = f->type->ir;
+            fn->ir = f->ir;
+        }
+    } else {
+        mangleName(fn->import_name, ctx, name);
+    }
+
+    if (!has_created) {
+        auto func_ty = createFuncType(fn->type);
+        auto linkage = fn->isExtern() ? GlobalValue::ExternalLinkage : GlobalValue::InternalLinkage;
+        func = llvm::Function::Create(func_ty, linkage, name, *M);
+        // process attributes
+        func->setCallingConv(getCallingConv(fn->type->attrs));
+        fn->ir = func;
+
+        if (fn->import_lib) importNames.insert({name, fn});
+    }
 
     if (auto lib = fn->import_lib) import_libs.insert(lib->str());
-
-    // process attributes
-    func->setCallingConv(getCallingConv(fn->type->attrs));
-
     return func;
 }
 
@@ -882,10 +899,13 @@ void CodeGen::emitFunc(Function *fn) {
 
     emitCode(fn->body.node);
     if (!curBB->getTerminator()) {
-        if (ret_ty->id != TypeVoid)
+        if (ret_ty->id != TypeVoid) {
+            if (llvm::isa<llvm::ConstantPointerNull>(curVal))
+                curVal = builder->CreateBitCast(curVal, llvmType(ret_ty));
             builder->CreateRet(curVal);
-        else
+        } else {
             builder->CreateRetVoid();
+        }
     }
 }
 
@@ -1070,6 +1090,7 @@ llvm::Type * CodeGen::llvmType(const Node *node) {
     case TypeBool:   return bool_ty;
     case TypeByte:   return byte_ty;
     case TypePtr:    return llvmType(ty->data.type)->getPointerTo();
+    case TypeNull:
     case TypeCStr:   return byte_ty->getPointerTo();
     case TypeStruct: return createStruct((Struct *)ty);
     //case TypeArray:  return llvm::ArrayType::get(byte_ty, ty->tok->len);

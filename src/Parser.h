@@ -48,8 +48,11 @@ enum VarAttr {
     VarGlobal    = 0x0002,
     VarLocal     = 0x0004,
     VarExtern    = 0x0008,
-    VarTLS       = 0x0010,
+    VarDeclare   = 0x0010,
+    VarTLS       = 0x0020,
 };
+
+#define NodeFlagStruct 1
 
 // AST node type
 enum NodeId : uint8_t {
@@ -61,7 +64,8 @@ struct Node {
     NodeId id;
     bool is_signed;
     uint16_t align;
-    uint32_t size;
+    uint16_t size;
+    uint16_t flags;
     Node *next;
     Token *tok;         // main token
 
@@ -268,6 +272,12 @@ struct Context : Node {
     bool is_root;
 };
 
+struct WithDecl {
+    SmallVector<Token *> ns;
+    SmallVector<Node *> decls;
+    Context *ctx;
+};
+
 class Compilation;
 class CodeGen;
 
@@ -279,10 +289,14 @@ private:
     typedef Buffer<unsigned char, 1024 * 1024> NodeBuffer; 
 
     uint32_t curTypeId;
+    Context *globalCtx;
     Context *curCtx;
     Function *curFunc;
     SmallVector<uint32_t> tids;  // detect struct circular reference
     SmallVector<Token *> import_libs;
+    SmallVector<Context *> withNS;
+    SmallVector<WithDecl *> withDecls;
+    SmallVector<WithDecl *> withStack;
 
     bool isSizeOf;
     std::set<FuncType> funcTypeCache;
@@ -304,9 +318,9 @@ public:
         hiddenParamTok.id = TokenIdWord;
         hiddenParamTok.loc = "__r/s_throw_";
         hiddenParamTok.len = std::char_traits<char>::length(hiddenParamTok.loc);
-        uintTy = Type{TypeInt, false, 4, 4, nullptr, nullptr, TypeInt};
-        boolTy = Type{TypeBool, false, 1, 1, nullptr, nullptr, TypeBool};
-        byteTy = Type{TypeByte, false, 1, 1, nullptr, nullptr, TypeByte};
+        uintTy = Type{TypeInt, false, 4, 4, 0, nullptr, nullptr, TypeInt};
+        boolTy = Type{TypeBool, false, 1, 1, 0, nullptr, nullptr, TypeBool};
+        byteTy = Type{TypeByte, false, 1, 1, 0, nullptr, nullptr, TypeByte};
         voidTy = Type{TypeVoid};
         nullTy = Type{TypeNull};
         uintPtrTy.id = TypePtr;
@@ -327,8 +341,8 @@ private:
     Variable * addVar(Context *ctx, Token * name, Variable *var = nullptr, bool is_local = false);
     void addDecl(Context *ctx, Token * name, Node *node);
     Context * findContext(Token *tok);
-    Variable * findVar(Token * name, Context **ctx_out);
-    Node * findDecl(Token * name, Context **ctx_out);
+    Variable * findVar(Token * name, Context **ctx_out, Context *ctx = nullptr);
+    Node * findDecl(Token * name, Context **ctx_out, Context *ctx = nullptr);
     const Type * findType(Token * name,  Context **ctx_out);
 
     Unary *getStructMember(const Type *st, Token *tok);
@@ -379,6 +393,7 @@ private:
     Node * parseCode(Token *tok, Token **rest, Context *ctx, bool is_func_body = true, bool is_block = true);
     Node * parseCodeBlock(Token *tok, Context *ctx, bool is_func_body = false);
     void parseFunctions(Context *ctx);
+    void parseFunc(Function *fn, Context *ctx);
     void analyzeCalls(Function *fn);
     void updateCall(Function *fn, FnCall *call);
 
@@ -390,6 +405,8 @@ private:
 
     bool resolveStruct(Type *ty, Context *ctx);
     void resolveDeclarations(Context *ctx);
+    void resolveFuncSpec(Type *ty);
+    void resolveWithDeclarations(Context *ctx, bool parse_func);
 
     Cast *newCast(Node *val, const Type *type) {
         auto node = newNode<Cast>(NodeCast, val->tok);

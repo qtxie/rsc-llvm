@@ -28,7 +28,7 @@
 
 using llvm::SMLoc;
 
-using OptimizationLevel = typename llvm::PassBuilder::OptimizationLevel;
+using OptimizationLevel = typename llvm::OptimizationLevel;
 
 class Compilation {
 public:

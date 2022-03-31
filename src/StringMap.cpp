@@ -12,9 +12,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "StringMap.h"
-#include <llvm/ADT/StringExtras.h>
-#include <llvm/Support/DJB.h>
-#include <llvm/Support/MathExtras.h>
+#include "llvm/Support/DJB.h"
+#include "llvm/Support/MathExtras.h"
 
 using namespace llvm;
 

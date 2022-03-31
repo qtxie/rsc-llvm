@@ -17,6 +17,7 @@
 #include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/ToolOutputFile.h>
+#include <llvm/Support/WithColor.h>
 
 using llvm::GlobalValue;
 using llvm::BasicBlock;
@@ -60,11 +61,11 @@ CodeGen::CodeGen(Compilation &c) : comp(c) {
 }
 
 llvm::Value * CodeGen::readStructMember(Path *path) {
-    return builder->CreateLoad(getElementPtr(path));
+    return CreateLoad(getElementPtr(path));
 }
 
 llvm::Value * CodeGen::readPointerValue(Path *path) {
-    return builder->CreateLoad(getElementPtr(path));
+    return CreateLoad(getElementPtr(path));
 }
 
 llvm::Value * CodeGen::getElementPtr(Path *path) {
@@ -84,7 +85,7 @@ llvm::Value * CodeGen::getElementPtr(Path *path) {
         ptr = var->ir;
         ty = ptr->getType();
     } else {
-        ptr = builder->CreateLoad(var->ir);
+        ptr = CreateLoad(var->ir);
         ty = ptr->getType();
     }
     ty = ty->getPointerElementType();
@@ -111,7 +112,7 @@ llvm::Value * CodeGen::getElementPtr(Path *path) {
         if (type_id == TypeCStr || type_id == TypePtr) {
             ptr = builder->CreateGEP(ty, ptr, indices);
             if (node->next) {
-                ptr = builder->CreateLoad(ptr);
+                ptr = CreateLoad(ptr);
                 ty = ptr->getType()->getScalarType()->getPointerElementType();
                 indices.clear();
                 if (node->next->id == NodeMemberAccess)
@@ -129,7 +130,7 @@ llvm::Value * CodeGen::getElementPtr(Path *path) {
 llvm::Value * CodeGen::readVariable(Variable *var) {
     LOG() << var << " " << var->tok->str() << " " << var->ir << " " << var->attrs << '\n';
     if (var->type->id == TypePtr && var->hasAttr(VarGlobal)) return var->ir;
-    return builder->CreateLoad(var->ir);
+    return CreateLoad(var->ir);
 }
 
 llvm::Value * CodeGen::getPointer(Node *node) {
@@ -184,7 +185,7 @@ llvm::Value * CodeGen::emitSwitch(Switch *node) {
     }
 
     setCurrentBasicBlock(after_switch);
-    return result ? builder->CreateLoad(result->ir) : nullptr;
+    return result ? CreateLoad(result->ir) : nullptr;
 }
 
 llvm::Value * CodeGen::emitEither(Either *node) {
@@ -212,7 +213,7 @@ llvm::Value * CodeGen::emitEither(Either *node) {
         builder->CreateBr(after_if);
 
     setCurrentBasicBlock(after_if);
-    return result ? builder->CreateLoad(result->ir) : nullptr;
+    return result ? CreateLoad(result->ir) : nullptr;
 }
 
 void CodeGen::emitIf(If *node) {
@@ -259,11 +260,11 @@ void CodeGen::emitLoop(Loop *node) {
 
     builder->CreateBr(loop_cond);
     setCurrentBasicBlock(loop_cond);
-    auto cond = builder->CreateICmpEQ(builder->CreateLoad(counter), builder->getInt32(0));
+    auto cond = builder->CreateICmpEQ(CreateLoad(counter), builder->getInt32(0));
     builder->CreateCondBr(cond, after_loop, loop_body);
 
     setCurrentBasicBlock(loop_body);
-    auto new_val = builder->CreateSub(builder->CreateLoad(counter), builder->getInt32(1));
+    auto new_val = builder->CreateSub(CreateLoad(counter), builder->getInt32(1));
     builder->CreateStore(new_val, counter);
 
     continueBB = loop_cond;
@@ -344,7 +345,7 @@ void CodeGen::handleThrow() {
     auto after_if_bb = createBasicBlock("after.if", afterCatchBB);
     auto catch_bb = createBasicBlock("catch", afterCatchBB);
     auto exception_val = curFunc->getArg(0);
-    llvm::Value *exception = builder->CreateLoad(exception_val);
+    llvm::Value *exception = CreateLoad(exception_val);
     auto zero = llvm::ConstantInt::get(i32_ty, 0);
     builder->CreateCondBr(builder->CreateICmpEQ(exception, zero), after_if_bb, catch_bb);
 
@@ -357,7 +358,7 @@ void CodeGen::handleThrow() {
         setCurrentBasicBlock(rethrow_bb);
     }
 
-    if (returnVal) builder->CreateRet(builder->CreateLoad(returnVal));
+    if (returnVal) builder->CreateRet(CreateLoad(returnVal));
     else builder->CreateRetVoid();
 
     setCurrentBasicBlock(after_if_bb);
@@ -381,7 +382,7 @@ llvm::Value * CodeGen::emitCall(FnCall *call) {
     } else {
         auto var = (Variable *)fn;
         fn_ty = (FuncType *)var->type;
-        fn_ir = builder->CreateLoad(var->ir);
+        fn_ir = CreateLoad(var->ir);
     }
 
     // process arguments
@@ -433,7 +434,7 @@ llvm::Value * CodeGen::emitCall(FnCall *call) {
             if (args->id == NodeNull) {
                 v = builder->CreateBitCast(v, fn_ty->ir->getParamType(n));
             } else if (v->getType()->isPointerTy() && (args->flags & NodeFlagStruct)) {
-                v = builder->CreateLoad(v->getType()->getPointerElementType(), v);
+                v = CreateLoad(v);
             }
             argv.push_back(v);
             args = args->next;
@@ -559,7 +560,7 @@ llvm::Value * CodeGen::emitAll(Any *node) {
     builder->CreateStore(llvm_cond, tempVarBool);
     builder->CreateBr(after_all);
     setCurrentBasicBlock(after_all);
-    return builder->CreateLoad(tempVarBool);
+    return CreateLoad(tempVarBool);
 }
 
 llvm::Value * CodeGen::emitAny(Any *node) {
@@ -584,7 +585,7 @@ llvm::Value * CodeGen::emitAny(Any *node) {
     builder->CreateStore(llvm_cond, tempVarBool);
     builder->CreateBr(after_any);
     setCurrentBasicBlock(after_any);
-    return builder->CreateLoad(tempVarBool);
+    return CreateLoad(tempVarBool);
 }
 
 llvm::Constant * CodeGen::createCString(Node *node) {
@@ -740,7 +741,7 @@ void CodeGen::emitThrow(Throw *node) {
 
     auto arg_throw = curFunc->getArg(0);
     builder->CreateStore(val, arg_throw);
-    if (returnVal) builder->CreateRet(builder->CreateLoad(returnVal));
+    if (returnVal) builder->CreateRet(CreateLoad(returnVal));
     else builder->CreateRetVoid();
 }
 
@@ -952,7 +953,7 @@ void CodeGen::createEntryFunc(Function *main_fn) {
         builder->CreateStore(zero, thrown);
         builder->CreateCall(main_fn->type->ir, main_fn->ir, {thrown});
 
-        llvm::Value *exception = builder->CreateLoad(thrown);
+        llvm::Value *exception = CreateLoad(thrown);
         auto no_exception_bb = createBasicBlock("no_exception");
         auto catch_bb = createBasicBlock("catch");
         builder->CreateCondBr(builder->CreateICmpEQ(exception, zero), no_exception_bb, catch_bb);
@@ -972,7 +973,7 @@ void CodeGen::createEntryFunc(Function *main_fn) {
 
 void CodeGen::output() {
     using namespace llvm;
-    using OptimizationLevel = typename PassBuilder::OptimizationLevel;
+    using OptimizationLevel = typename llvm::OptimizationLevel;
 
     PassBuilder pass_builder(comp.TM);
     LoopAnalysisManager loop_am;

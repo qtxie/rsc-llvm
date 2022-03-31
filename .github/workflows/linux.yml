@@ -4,7 +4,7 @@ name: Linux
 
 on:
   push:
-    branches: [ CI ]
+    branches: [ master ]
   pull_request:
 
   # Allows you to run this workflow manually from the Actions tab

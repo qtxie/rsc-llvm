@@ -174,7 +174,7 @@ void Compilation::linkElf(llvm::SmallSet<StringRef, 4> &import_libs) {
     argv.push_back("/lib/x86_64-linux-gnu");
     argv.push_back("-lc");
 
-    if (!lld::elf::link(argv, false, llvm::outs(), llvm::errs()))
+    if (!lld::elf::link(argv, llvm::outs(), llvm::errs(), false, false))
         lld::exitLld(-1);
 }
 
@@ -214,8 +214,9 @@ void Compilation::linkCoff(llvm::SmallSet<StringRef, 4> &import_libs) {
             argv.push_back((char *)libs.back().c_str());
         }
     }
-    if (!lld::coff::link(argv, false, llvm::outs(), llvm::errs()))
+    if (!lld::coff::link(argv, llvm::outs(), llvm::errs(), false, false)) {
         lld::exitLld(-1);
+    }
 }
 
 void Compilation::link(llvm::SmallSet<StringRef, 4> &import_libs) {

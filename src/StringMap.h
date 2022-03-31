@@ -14,9 +14,10 @@
 #ifndef LLVM_ADT_STRINGMAP_H
 #define LLVM_ADT_STRINGMAP_H
 
-#include <llvm/ADT/StringMapEntry.h>
-#include <llvm/Support/AllocatorBase.h>
-#include <llvm/Support/PointerLikeTypeTraits.h>
+#include "llvm/ADT/StringMapEntry.h"
+#include "llvm/ADT/iterator.h"
+#include "llvm/Support/AllocatorBase.h"
+#include "llvm/Support/PointerLikeTypeTraits.h"
 #include <initializer_list>
 #include <iterator>
 
@@ -127,9 +128,7 @@ public:
 
   StringMap(std::initializer_list<std::pair<StringRef, ValueTy>> List)
       : StringMapImpl(List.size(), static_cast<unsigned>(sizeof(MapEntryTy))) {
-    for (const auto &P : List) {
-      insert(P);
-    }
+    insert(List);
   }
 
   StringMap(StringMap &&RHS)
@@ -296,6 +295,21 @@ public:
   /// the pair points to the element with key equivalent to the key of the pair.
   std::pair<iterator, bool> insert(std::pair<StringRef, ValueTy> KV) {
     return try_emplace(KV.first, std::move(KV.second));
+  }
+
+  /// Inserts elements from range [first, last). If multiple elements in the
+  /// range have keys that compare equivalent, it is unspecified which element
+  /// is inserted .
+  template <typename InputIt> void insert(InputIt First, InputIt Last) {
+    for (InputIt It = First; It != Last; ++It)
+      insert(*It);
+  }
+
+  ///  Inserts elements from initializer list ilist. If multiple elements in
+  /// the range have keys that compare equivalent, it is unspecified which
+  /// element is inserted
+  void insert(std::initializer_list<std::pair<StringRef, ValueTy>> List) {
+    insert(List.begin(), List.end());
   }
 
   /// Inserts an element or assigns to the current element if the key already
@@ -466,13 +480,7 @@ public:
   explicit StringMapKeyIterator(StringMapConstIterator<ValueTy> Iter)
       : base(std::move(Iter)) {}
 
-  StringRef &operator*() {
-    Key = this->wrapped()->getKey();
-    return Key;
-  }
-
-private:
-  StringRef Key;
+  StringRef operator*() const { return this->wrapped()->getKey(); }
 };
 
 } // end namespace llvm

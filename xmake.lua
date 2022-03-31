@@ -27,10 +27,6 @@ option("llvm")
             "LLVMDlltoolDriver",
             "LLVMCoverage",
             "LLVMLineEditor",
-            "LLVMXCoreDisassembler",
-            "LLVMXCoreCodeGen",
-            "LLVMXCoreDesc",
-            "LLVMXCoreInfo",
             "LLVMX86Disassembler",
             "LLVMX86AsmParser",
             "LLVMX86CodeGen",
@@ -42,71 +38,17 @@ option("llvm")
             "LLVMWebAssemblyDesc",
             "LLVMWebAssemblyUtils",
             "LLVMWebAssemblyInfo",
-            "LLVMSystemZDisassembler",
-            "LLVMSystemZAsmParser",
-            "LLVMSystemZCodeGen",
-            "LLVMSystemZDesc",
-            "LLVMSystemZInfo",
-            "LLVMSparcDisassembler",
-            "LLVMSparcAsmParser",
-            "LLVMSparcCodeGen",
-            "LLVMSparcDesc",
-            "LLVMSparcInfo",
             "LLVMRISCVDisassembler",
             "LLVMRISCVAsmParser",
             "LLVMRISCVCodeGen",
             "LLVMRISCVDesc",
             "LLVMRISCVInfo",
-            "LLVMPowerPCDisassembler",
-            "LLVMPowerPCAsmParser",
-            "LLVMPowerPCCodeGen",
-            "LLVMPowerPCDesc",
-            "LLVMPowerPCInfo",
-            "LLVMNVPTXCodeGen",
-            "LLVMNVPTXDesc",
-            "LLVMNVPTXInfo",
-            "LLVMMSP430Disassembler",
-            "LLVMMSP430AsmParser",
-            "LLVMMSP430CodeGen",
-            "LLVMMSP430Desc",
-            "LLVMMSP430Info",
-            "LLVMMipsDisassembler",
-            "LLVMMipsAsmParser",
-            "LLVMMipsCodeGen",
-            "LLVMMipsDesc",
-            "LLVMMipsInfo",
-            "LLVMLanaiDisassembler",
-            "LLVMLanaiCodeGen",
-            "LLVMLanaiAsmParser",
-            "LLVMLanaiDesc",
-            "LLVMLanaiInfo",
-            "LLVMHexagonDisassembler",
-            "LLVMHexagonCodeGen",
-            "LLVMHexagonAsmParser",
-            "LLVMHexagonDesc",
-            "LLVMHexagonInfo",
-            "LLVMBPFDisassembler",
-            "LLVMBPFAsmParser",
-            "LLVMBPFCodeGen",
-            "LLVMBPFDesc",
-            "LLVMBPFInfo",
-            "LLVMAVRDisassembler",
-            "LLVMAVRAsmParser",
-            "LLVMAVRCodeGen",
-            "LLVMAVRDesc",
-            "LLVMAVRInfo",
             "LLVMARMDisassembler",
             "LLVMARMAsmParser",
             "LLVMARMCodeGen",
             "LLVMARMDesc",
             "LLVMARMUtils",
             "LLVMARMInfo",
-            "LLVMAMDGPUDisassembler",
-            "LLVMAMDGPUAsmParser",
-            "LLVMAMDGPUCodeGen",
-            "LLVMAMDGPUDesc",
-            "LLVMAMDGPUUtils",
-            "LLVMAMDGPUInfo",
             "LLVMAArch64Disassembler",
             "LLVMAArch64AsmParser",
             "LLVMAArch64CodeGen",
@@ -177,40 +119,30 @@ option("llvm")
             "lldCOFF",
             "lldELF",
             "lldMachO",
-            "lldMachO2",
             "lldMinGW",
             "lldWasm",
-            "lldCommon",
-            "lldCore",
-            "lldDriver",
-            "lldReaderWriter",
-            "lldYAML"
+            "lldCommon"
         )
         if is_mode("debug") then 
-            add_linkdirs("D:/llvm+clang+lld-13.0.0-x86_64-windows-msvc-debug/lib")
-            add_includedirs("D:/llvm+clang+lld-13.0.0-x86_64-windows-msvc-debug/include")
+            add_linkdirs("D:/llvm+clang+lld-14.0.0-x86_64-windows-msvc-debug/lib")
+            add_includedirs("D:/llvm+clang+lld-14.0.0-x86_64-windows-msvc-debug/include")
         elseif is_mode("release") then
-            add_linkdirs("D:/llvm+clang+lld-13.0.0-x86_64-windows-msvc-release-mt/lib")
-            add_includedirs("D:/llvm+clang+lld-13.0.0-x86_64-windows-msvc-release-mt/include")
+            add_linkdirs("D:/llvm+clang+lld-14.0.0-x86_64-windows-msvc-release/lib")
+            add_includedirs("D:/llvm+clang+lld-14.0.0-x86_64-windows-msvc-release/include")
         end
     elseif is_plat("linux") then
         add_links(
-            "LLVM-13",
+            "LLVM-14",
             "lldCOFF",
             "lldELF",
             "lldMachO",
-            "lldMachO2",
             "lldMinGW",
             "lldWasm",
             "lldCommon",
-            "lldCore",
-            "lldDriver",
-            "lldReaderWriter",
-            "lldYAML",
             "pthread"
         )
-        add_linkdirs("/usr/lib/llvm-13/lib")
-        add_includedirs("/usr/lib/llvm-13/include")
+        add_linkdirs("/usr/lib/llvm-14/lib")
+        add_includedirs("/usr/lib/llvm-14/include")
     end
 
 set_languages("cxx20")

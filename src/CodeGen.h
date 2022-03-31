@@ -104,6 +104,10 @@ public:
 private:
     void mangleName(Token *tok, Context *ctx, std::string &result);
 
+    llvm::LoadInst * CreateLoad(llvm::Value *Ptr) {
+        return builder->CreateLoad(Ptr->getType()->getPointerElementType(), Ptr);
+    }
+
     llvm::ConstantInt * getConstantInt(Node *node) {
         llvm::IntegerType *ty = node->id == TypeByte ? byte_ty : i32_ty;
         return llvm::ConstantInt::get(ty, ((Type *)node)->data.value, node->is_signed);

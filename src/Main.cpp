@@ -14,13 +14,13 @@
 #include <llvm/Support/Host.h>
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/MemoryBuffer.h>
-#include <llvm/Support/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Support/WithColor.h>
 #include <llvm/Support/ConvertUTF.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Target/TargetMachine.h>
+#include <llvm/MC/TargetRegistry.h>
 
 #include "Version.h"
 #include "Compilation.h"
@@ -194,7 +194,7 @@ int main(int Argc, const char **Argv) {
     llvm::TargetMachine *TM = createTargetMachine(Argv[0]);
     if (!TM) exit(EXIT_FAILURE);
 
-    using OptimizationLevel = typename PassBuilder::OptimizationLevel;
+    using OptimizationLevel = typename llvm::OptimizationLevel;
     OptimizationLevel optLevel;
     switch (OptLevel) {
         case 0:  optLevel = OptimizationLevel::O0; break;
@@ -207,8 +207,8 @@ int main(int Argc, const char **Argv) {
     auto dataDir = fs::path(getCacheDir()) / ".redrs";
     fs::create_directories(dataDir);
 
-    for (const auto &file : InputFiles) {
-        Compilation comp(file, dataDir.string(), RuntimeDir, LibsDir, TM, optLevel, EmitLLVM);
+    for (int i = 0; i < InputFiles.size(); i++) {
+        Compilation comp(InputFiles[i], dataDir.string(), RuntimeDir, LibsDir, TM, optLevel, EmitLLVM);
         comp.run();
     }
 

@@ -139,7 +139,8 @@ option("llvm")
             "lldMinGW",
             "lldWasm",
             "lldCommon",
-            "pthread"
+            "pthread",
+            "z"
         )
         add_linkdirs("/usr/lib/llvm-14/lib")
         add_includedirs("/usr/lib/llvm-14/include")

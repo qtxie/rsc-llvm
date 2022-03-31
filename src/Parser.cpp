@@ -5,6 +5,7 @@
  * https://github.com/red/red/blob/master/BSD-3-License.txt
 */
 
+#include <cfloat>
 #include <limits>
 #include "LexMap.h"
 #include "Parser.h"

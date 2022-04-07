@@ -197,6 +197,15 @@ struct Pointer : TypedNode {
     }
 };
 
+struct Array : TypedNode {
+    char *data;
+    uint64_t num;
+
+    StringRef toStringRef() {
+        return StringRef(data, num);
+    }
+};
+
 struct FnCall : Node {
     FuncType *type;  //@@ make sure type is the first member
     Function *fn;
@@ -358,6 +367,7 @@ private:
     const Type * parseType(Token *tok, Token **rest, bool is_block = true, bool is_collect = false, bool error = true);
     Node * parseBool(Token *tok);
     Node * parseInteger(Token *tok);
+    Node * parseBinary(Token *tok);
     Node * parseByte(Token *tok);
     Node * parseString(Token *tok);
     Node * parseAnyAll(Token *tok, Token **rest, NodeId id);

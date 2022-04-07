@@ -20,8 +20,6 @@ TYPE(Ptr,                "pointer!")
 TYPE(Struct,             "struct!")
 TYPE(Func,               "function!")
 TYPE(CStr,               "c-string!")
-TYPE(Binary,             "binary!")
-TYPE(Array,              "array!")
 TYPE(Type,               "anytype!")
 TYPE(Alias,              "alias!")
 TYPE(FuncTy,             "func-spec")
@@ -78,6 +76,7 @@ NODE(Declare,            "declare")
 NODE(Member,             "struct-member")
 NODE(Null,               "null")
 NODE(WithDecl,           "with-decls")
+NODE(Array,              "array")
 
 #undef TYPE
 #undef NODE

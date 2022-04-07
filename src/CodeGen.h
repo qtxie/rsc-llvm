@@ -117,8 +117,15 @@ private:
         return llvm::ConstantFP::get(node->id == TypeFloat ? f32_ty : f64_ty, ((Type *)node)->data.fvalue);
     }
 
+    llvm::Value * getArrayPtr(llvm::GlobalVariable *gvar) {
+        llvm::Constant *Zero = llvm::ConstantInt::get(i32_ty, 0);
+        llvm::Constant *Indices[] = {Zero, Zero};
+        return llvm::ConstantExpr::getInBoundsGetElementPtr(gvar->getValueType(), gvar, Indices);
+    }
+
     llvm::StructType * createStruct(Struct *st);
-    llvm::Constant * createCString(Node *node);
+    llvm::Value * createCString(Node *node);
+    llvm::Constant * createArray(Array *node);
 
     llvm::BasicBlock * createBasicBlock(const llvm::Twine &name = "", llvm::BasicBlock *insertBefore = nullptr) {
         return llvm::BasicBlock::Create(Ctx, name, curFunc, insertBefore);

@@ -617,6 +617,7 @@ const Type * Parser::addVarType(Node *node) {
                 if (!var->isType(ty))
                     error(assign->rhs, err_expected_type, TypeName[var->type->id], TypeName[ty->id]);
             }
+            if (var->hasAttr(VarGlobal) && ty->id == TypeCStr) var->size = ty->tok->len + 1;
         } else if (dest_id == NodeMemberAccess) {
 
         }
@@ -814,6 +815,7 @@ const Type * Parser::analyzeNodeType(Node *node) {
     case NodeNull:   return &nullTy;
     case NodeIdent:  return ((Identifier *)node)->var->type;
     case NodePtr:    return ((Pointer *)node)->type;
+    case NodeArray:  return newPtrType(((Array *)node)->type);
     default:         return &voidTy;
     }
 }
@@ -1153,7 +1155,7 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
             Unary *node = (Unary *)cur;
             ty = ((Member *)node->value)->type;
             type_id = ty->id;
-        } else if (type_id == TypeCStr || type_id == TypePtr) {
+        } else if (type_id == TypeCStr || type_id == TypePtr || type_id == NodeArray) {
             if (!path) {
                 path = newNode<Path>(NodePtrIdx, tok);
                 path->first = var;
@@ -1186,14 +1188,12 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
             }
 
             // next element's type
-            if (type_id == TypeCStr) {
+            if (type_id == TypeCStr || type_id == NodeArray) {
                 type_id = TypeByte;
             } else {
                 ty = ty->data.type;
                 type_id = ty->id;
             }
-        } else if (type_id == TypeArray) {
-
         } else {
             comp.error(tok, err_invalid_path);
         }
@@ -1446,6 +1446,29 @@ Node * Parser::parseByte(Token *tok) {
     return ty;
 }
 
+Node * Parser::parseBinary(Token *tok) {
+    auto node = newNode<Array>(NodeArray, tok);
+    auto output = new SmallString<16>();
+    auto n = tok->len;
+    const char *p = tok->loc;
+    int accum = 0;
+    uint64_t count = 0;
+    while (n > 0) {
+        auto lex = Lex_Map[*p];
+        if (lex > LEX_WORD) {
+            auto val = lex & LEX_VALUE;
+            accum = (accum << 4) + val;
+            if (count++ & 1) output->push_back((char)accum);
+        }
+        p++;
+        n--;
+    }
+    node->data = output->data();
+    node->num = output->size();
+    node->type = &byteTy;
+    return node;
+}
+
 Node * Parser::parseString(Token *tok) {
     auto ty = newNode<Type>(TypeCStr, tok);
     ty->data.str = tok->loc;
@@ -1519,6 +1542,7 @@ Node * Parser::parseSizeOf(Token *tok, Token **rest) {
     auto ty = parseType(tok, rest, false, true, false);
     isSizeOf = false;
 
+    Node *var;
     // @@ we have to do this because `rest` points to the token beyond end token
     if (ty) {
         auto end = *rest;
@@ -1529,9 +1553,20 @@ Node * Parser::parseSizeOf(Token *tok, Token **rest) {
         *rest = tok;
 
         if (ty->id == TypeStructUnresolved) resolveStruct((Type *)ty, curCtx);
+        node->value = (Node *)ty;
+    } else {
+        Identifier *ident = (Identifier *)parseExpr(tok, rest);
+        if (ident->id == NodeIdent) {
+            auto var = ident->var;
+            if (var->id == NodeVar && var->hasAttr(VarGlobal) && var->type->id == TypeCStr) {
+                Type *ty = newNode<Type>(TypeInt, tok);
+                ty->data.value = var->size;
+                return ty;
+            }
+        }
+        node->value = ident;
     }
 
-    node->value = ty ? (Node *)ty : parseExpr(tok, rest);
     return node;
 }
 
@@ -1593,6 +1628,9 @@ Node * Parser::parseUnaryExpr(Token *tok, Token **rest) {
             break;
         case TokenIdByte:
             node = parseByte(tok);
+            break;
+        case TokenIdBinary:
+            node = parseBinary(tok);
             break;
         case TokenIdString:
             node = parseString(tok);

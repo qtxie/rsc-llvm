@@ -84,6 +84,10 @@ llvm::Value * CodeGen::getElementPtr(Path *path) {
     if (var_ty->id == TypeStruct || (var->hasAttr(VarGlobal) && var_ty->id == TypePtr)) {
         ptr = var->ir;
         ty = ptr->getType();
+        if (ty->getPointerElementType()->isArrayTy()) {
+            ptr = getArrayPtr(llvm::cast<llvm::GlobalVariable>(ptr));
+            ty = ptr->getType();
+        }
     } else {
         ptr = CreateLoad(var->ir);
         ty = ptr->getType();
@@ -588,13 +592,17 @@ llvm::Value * CodeGen::emitAny(Any *node) {
     return CreateLoad(tempVarBool);
 }
 
-llvm::Constant * CodeGen::createCString(Node *node) {
+llvm::Value * CodeGen::createCString(Node *node) {
     const char *data = ((Type *)node)->data.str;
     auto str = builder->CreateGlobalString(StringRef(data, node->tok->len), "", 0, M);
     str->setConstant(false);
-    llvm::Constant *Zero = llvm::ConstantInt::get(i32_ty, 0);
-    llvm::Constant *Indices[] = {Zero, Zero};
-    return llvm::ConstantExpr::getInBoundsGetElementPtr(str->getValueType(), str, Indices);
+    return getArrayPtr(str);
+}
+
+llvm::Constant * CodeGen::createArray(Array *node) {
+    auto arr = llvm::ConstantDataArray::getRaw(node->toStringRef(), node->num, llvmType(node->type));
+    auto *gvar = new llvm::GlobalVariable(*M, arr->getType(), false, llvm::GlobalValue::PrivateLinkage, arr);
+    return gvar;
 }
 
 llvm::Value * CodeGen::emitCast(Cast *node) {
@@ -629,7 +637,11 @@ llvm::Value * CodeGen::emitSizeOf(Unary *node) {
         auto val = emitExpr(node->value);
         ty = val->getType();
     }
-    auto sz = M->getDataLayout().getTypeAllocSize(ty).getFixedSize();
+    uint64_t sz;
+    if (ty->isPointerTy() && ty->getPointerElementType()->isArrayTy())
+        sz = ty->getPointerElementType()->getArrayNumElements();
+    else
+        sz = M->getDataLayout().getTypeAllocSize(ty).getFixedSize();
     return llvm::ConstantInt::get(i32_ty, sz);
 }
 
@@ -674,6 +686,7 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
         Type *ty = (Type *)node;
         val = llvm::ConstantInt::getBool(Ctx, ty->data.value);
     } break;
+    case NodeArray:        val = createArray((Array*)node); break;
     case NodeMemberAccess: val = readStructMember((Path *)node); break;
     case NodePtrIdx:       val = readPointerValue((Path *)node); break;
     case NodeSizeOf:       val = emitSizeOf((Unary *)node); break;

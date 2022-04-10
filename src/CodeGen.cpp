@@ -605,6 +605,57 @@ llvm::Constant * CodeGen::createArray(Array *node) {
     return gvar;
 }
 
+llvm::Value * CodeGen::createLiteralArray(LitArray *node) {
+    int unit = 0;
+    int ptr_sz = M->getDataLayout().getPointerSize();
+    if (node->is_homogenous) {
+        unit = node->vals->size;
+        if (node->vals->id == TypeCStr) unit = ptr_sz;
+    } else {
+        Node *val = node->vals;
+        while (val) {
+            if (val->size > unit) unit = val->size;
+            if (val->id == TypeCStr && ptr_sz > unit) unit = ptr_sz;
+            val = val->next;
+        }
+    }
+LOG() << unit << '\n';
+    auto data = (char *)malloc(unit * node->num);
+    auto start = data;
+    Node *val = node->vals;
+    while (val) {
+        Type *ty = (Type *)val;
+        switch (val->id)
+        {
+        case TypeByte:
+        case TypeBool: {
+            char *p = (char *)data;
+            *p = (char)ty->data.chr;
+        } break;
+        case TypeInt: {
+            int *p = (int *)data;
+            *p = (int)ty->data.value;
+        } break;
+        case TypeDouble: {
+            double *p = (double *)data;
+            *p = ty->data.fvalue;
+        } break;
+        case TypeCStr: {
+            char **p = (char **)data;
+            //*p = createCString(val);
+        } break; 
+        default:
+            break;
+        }
+        data = data + unit;
+        val = val->next;
+    }
+LOG() << start << '\n';
+    auto arr = llvm::ConstantDataArray::getRaw({start, unit * node->num}, node->num, llvmType(node->vals));
+    auto *gvar = new llvm::GlobalVariable(*M, arr->getType(), false, llvm::GlobalValue::PrivateLinkage, arr);
+    return getArrayPtr(gvar);
+}
+
 llvm::Value * CodeGen::emitCast(Cast *node) {
     auto val = emitExpr(node->expr);
     auto ty = val->getType();
@@ -687,6 +738,7 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
         val = llvm::ConstantInt::getBool(Ctx, ty->data.value);
     } break;
     case NodeArray:        val = createArray((Array*)node); break;
+    case NodeLiteralArray: val = createLiteralArray((LitArray*)node); break;
     case NodeMemberAccess: val = readStructMember((Path *)node); break;
     case NodePtrIdx:       val = readPointerValue((Path *)node); break;
     case NodeSizeOf:       val = emitSizeOf((Unary *)node); break;

@@ -618,6 +618,10 @@ const Type * Parser::addVarType(Node *node) {
                     error(assign->rhs, err_expected_type, TypeName[var->type->id], TypeName[ty->id]);
             }
             if (var->hasAttr(VarGlobal) && ty->id == TypeCStr) var->size = ty->tok->len + 1;
+            if (var->hasAttr(VarGlobal) && assign->rhs->id == NodeLiteralArray) {
+                LitArray *arr = (LitArray *)assign->rhs;
+                var->size = arr->num;
+            }
         } else if (dest_id == NodeMemberAccess) {
 
         }
@@ -816,6 +820,14 @@ const Type * Parser::analyzeNodeType(Node *node) {
     case NodeIdent:  return ((Identifier *)node)->var->type;
     case NodePtr:    return ((Pointer *)node)->type;
     case NodeArray:  return newPtrType(((Array *)node)->type);
+    case NodeLiteralArray: {
+        auto arr = (LitArray *)node;
+        if (arr->is_homogenous) {
+            return newPtrType((const Type *)arr->vals);
+        } else {
+            return &uintPtrTy;
+        }
+    }
     default:         return &voidTy;
     }
 }
@@ -1155,7 +1167,7 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
             Unary *node = (Unary *)cur;
             ty = ((Member *)node->value)->type;
             type_id = ty->id;
-        } else if (type_id == TypeCStr || type_id == TypePtr || type_id == NodeArray) {
+        } else if (type_id == TypeCStr || type_id == TypePtr || type_id == NodeArray || type_id == NodeLiteralArray) {
             if (!path) {
                 path = newNode<Path>(NodePtrIdx, tok);
                 path->first = var;
@@ -1426,11 +1438,13 @@ char Parser::scanByte(const char **bp, int *err) {
 Node * Parser::parseBool(Token *tok) {
     Type *ty = newNode<Type>(TypeBool, tok);
     ty->data.value = tok->id == TokenIdTrue ? 1 : 0;
+    ty->size = 1;
     return ty;
 }
 
 Node * Parser::parseInteger(Token *tok) {
     Type *ty = newNode<Type>(TypeInt, tok);
+    ty->size = 4;
     if (tok->toInteger(ty->data.value))
         comp.error(tok, err_int_overflow);
     return ty;
@@ -1443,6 +1457,7 @@ Node * Parser::parseByte(Token *tok) {
     if (err == -1) comp.error(tok, err_invalid_token);
     auto ty = newNode<Type>(TypeByte, tok);
     ty->data.chr = chr;
+    ty->size = 1;
     return ty;
 }
 
@@ -1496,6 +1511,32 @@ Node * Parser::parseString(Token *tok) {
         tok->len = n;
     }
     return ty;
+}
+
+Node * Parser::parseLiteralArray(Token *tok, Token **rest) {
+    auto node = newNode<LitArray>(NodeLiteralArray, tok);
+    node->is_homogenous = true;
+    tok = tok->next;
+    uint32_t n = 0;
+    Node head{};
+    Node *cur = &head;
+    while (tok->id != TokenIdRBracket) {
+        n++;
+        cur = cur->next = parseUnaryExpr(tok, &tok);
+        tok = tok->next;
+    }
+    *rest = tok;
+    node->vals = head.next;
+    node->num = n;
+
+    cur = head.next;
+    auto id = cur->id;
+    while (cur) {
+        if (id != cur->id) node->is_homogenous = false;
+        id = cur->id;
+        cur = cur->next;
+    }
+    return node;
 }
 
 // type-cast = "as" (type | "[" type "]") "keep"? expression
@@ -1558,7 +1599,7 @@ Node * Parser::parseSizeOf(Token *tok, Token **rest) {
         Identifier *ident = (Identifier *)parseExpr(tok, rest);
         if (ident->id == NodeIdent) {
             auto var = ident->var;
-            if (var->id == NodeVar && var->hasAttr(VarGlobal) && var->type->id == TypeCStr) {
+            if (var->id == NodeVar && var->hasAttr(VarGlobal) && var->size > 0) {
                 Type *ty = newNode<Type>(TypeInt, tok);
                 ty->data.value = var->size;
                 return ty;
@@ -1618,6 +1659,7 @@ Node * Parser::parseUnaryExpr(Token *tok, Token **rest) {
             break;
         case TokenIdFloat:
             ty = newNode<Type>(TypeDouble, tok);
+            ty->size = 8;
             node = ty;
             if (tok->flags & TKFlagSpecialFloat) {
                 if (tok->equals("1.#inf")) ty->data.fvalue = std::numeric_limits<double>::infinity();
@@ -1654,6 +1696,7 @@ Node * Parser::parseUnaryExpr(Token *tok, Token **rest) {
         case TokenIdSize:     node = parseSizeOf(tok, &tok); break;
         case TokenIdNot:      node = parseNot(tok, &tok); break;
         case TokenIdNull:     node = newNode<Node>(NodeNull, tok); break;
+        case TokenIdLBracket: node = parseLiteralArray(tok, &tok); break;
         case TokenIdFunc:  // anonymous function
         case TokenIdAlias:
         default:

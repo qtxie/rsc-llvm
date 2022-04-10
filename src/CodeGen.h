@@ -125,6 +125,7 @@ private:
 
     llvm::StructType * createStruct(Struct *st);
     llvm::Value * createCString(Node *node);
+    llvm::Value * createLiteralArray(LitArray *node);
     llvm::Constant * createArray(Array *node);
 
     llvm::BasicBlock * createBasicBlock(const llvm::Twine &name = "", llvm::BasicBlock *insertBefore = nullptr) {

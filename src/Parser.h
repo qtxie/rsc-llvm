@@ -281,6 +281,12 @@ struct Context : Node {
     bool is_root;
 };
 
+struct LitArray : Node {
+    Node *vals;
+    uint32_t num;
+    bool is_homogenous;
+};
+
 struct WithDecl {
     SmallVector<Token *> ns;
     SmallVector<Node *> decls;
@@ -370,6 +376,7 @@ private:
     Node * parseBinary(Token *tok);
     Node * parseByte(Token *tok);
     Node * parseString(Token *tok);
+    Node * parseLiteralArray(Token *tok, Token **rest);
     Node * parseAnyAll(Token *tok, Token **rest, NodeId id);
     Node * parseAll(Token *tok, Token **rest) {return parseAnyAll(tok, rest, NodeAll);}
     Node * parseAny(Token *tok, Token **rest) {return parseAnyAll(tok, rest, NodeAny);}

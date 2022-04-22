@@ -607,10 +607,14 @@ llvm::Constant * CodeGen::createArray(Array *node) {
 
 llvm::Value * CodeGen::createLiteralArray(LitArray *node) {
     int unit = 0;
+    bool is_str = false;
     int ptr_sz = M->getDataLayout().getPointerSize();
     if (node->is_homogenous) {
         unit = node->vals->size;
-        if (node->vals->id == TypeCStr) unit = ptr_sz;
+        if (node->vals->id == TypeCStr) {
+            unit = ptr_sz;
+            is_str = true;
+        }
     } else {
         Node *val = node->vals;
         while (val) {
@@ -619,7 +623,19 @@ llvm::Value * CodeGen::createLiteralArray(LitArray *node) {
             val = val->next;
         }
     }
-LOG() << unit << '\n';
+
+    if (node->is_homogenous && is_str) {
+        SmallVector<llvm::Constant *> data;
+        Node *val = node->vals;
+        while (val) {
+            data.push_back((llvm::Constant*)createCString(val));
+            val = val->next;
+        }
+        auto arr = llvm::ConstantArray::get(llvm::ArrayType::get(llvmType(node->vals), node->num), data);
+        auto *gvar = new llvm::GlobalVariable(*M, arr->getType(), false, llvm::GlobalValue::PrivateLinkage, arr);
+        return getArrayPtr(gvar); 
+    }
+
     auto data = (char *)malloc(unit * node->num);
     auto start = data;
     Node *val = node->vals;
@@ -650,7 +666,7 @@ LOG() << unit << '\n';
         data = data + unit;
         val = val->next;
     }
-LOG() << start << '\n';
+
     auto arr = llvm::ConstantDataArray::getRaw({start, unit * node->num}, node->num, llvmType(node->vals));
     auto *gvar = new llvm::GlobalVariable(*M, arr->getType(), false, llvm::GlobalValue::PrivateLinkage, arr);
     return getArrayPtr(gvar);

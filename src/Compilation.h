@@ -45,6 +45,7 @@ public:
     TokenBuffer tokBuf;
 
     // Configuration
+    bool isRedMode;
     void *baseAddress;
     int arch;
     int abi;
@@ -65,6 +66,7 @@ public:
         ) : mainFile(filepath), appDataDir(data_dir), runtimeDir(rt_dir),
             libsDir(libs_dir), TM(target), optLevel(level), emitIr(emit_llvm) {
         entryFuncName = "__Red/System__MainStartup0";
+        isRedMode = false;
     }
 
     void run();

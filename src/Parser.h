@@ -358,7 +358,7 @@ private:
     Context * findContext(Token *tok);
     Variable * findVar(Token * name, Context **ctx_out, Context *ctx = nullptr);
     Node * findDecl(Token * name, Context **ctx_out, Context *ctx = nullptr);
-    const Type * findType(Token * name,  Context **ctx_out);
+    const Type * findType(Token * name,  Context **ctx_out, Context *ctx);
 
     Unary *getStructMember(const Type *st, Token *tok);
 

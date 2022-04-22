@@ -214,13 +214,13 @@ constexpr auto genDatatypes()
     return datatypes;
 }
 
-const Type * Parser::findType(Token *name, Context **ctx) {
+const Type * Parser::findType(Token *name, Context **ctx_out, Context *ctx) {
     static constexpr auto basic_types = genDatatypes();
     auto it = std::lower_bound(basic_types.begin(), basic_types.end(), name->str(),
         [](const auto &a, const auto &b) {return -1 == a.first.compare_insensitive(b);});
 
     if (it == basic_types.end() || !name->equals(it->first)) {
-        auto node = findDecl(name, ctx);
+        auto node = findDecl(name, ctx_out, ctx);
         if (node && node->id < TypeEnd) return (Type *)node;
     } else {
         return const_cast<Type *>(&it->second);
@@ -230,13 +230,31 @@ const Type * Parser::findType(Token *name, Context **ctx) {
 
 const Type * Parser::parseType(Token *tok, Token **rest, bool is_block, bool is_collect, bool error) {
     if (is_block) tok = skip(tok, TokenIdLBracket, '[');
+
+    Context *ctx = nullptr;
+    if (tok->next->id == TokenIdSlash) {   // type in namespaces
+        Token *next;
+        do {
+            Context *ctx_out = nullptr;
+            auto var = findVar(tok, &ctx_out, ctx);
+            if (var && var->id == NodeContext) {
+                ctx = (Context *)var;
+            } else {
+                break;
+            }
+            next = tok->next;
+            tok = next->next;
+        } while (next->id == TokenIdSlash);
+    }
+
     if (tok->id != TokenIdWord) {
         if (error) comp.error(tok, err_expected, "datatype");
         else return nullptr;
     }
-    Context *ctx = nullptr;
-    const Type *type = findType(tok, &ctx);
-    LOG() << type << " " << tok->str() << '\n';
+
+    Context *ctx_out = nullptr;
+    const Type *type = findType(tok, &ctx_out, ctx);
+    LOG() << type << " " << tok->str() << " " << TokenNames[tok->id] << '\n';
     if (type) {  // alias type
         tok = tok->next;
         if (!is_collect && tok->id == TokenIdWord && tok->equals("value")) { // struct value
@@ -1311,6 +1329,8 @@ Node * Parser::parseFnCall(FuncType *ftype, Function *fn, Token *tok, Token **re
 }
 
 Node * Parser::parseBinaryOp(Node *lhs, Token *tok, Token **rest) {
+    if (comp.isRedMode) return lhs;
+
     // map TokenId to NodeId
     static const NodeId bin_ops[] = {
         // +        -          /        //           %
@@ -1322,6 +1342,7 @@ Node * Parser::parseBinaryOp(Node *lhs, Token *tok, Token **rest) {
     };
 
     BinaryOp *node = nullptr;
+
     while (true) {
         auto tok_id = tok->next->id;
         NodeId node_id;
@@ -1616,6 +1637,44 @@ Node * Parser::parseUnaryExpr(Token *tok, Token **rest) {
     Node *node = nullptr;
     Type *ty;
     bool is_set;
+
+    if (comp.isRedMode) {
+        // map TokenId to NodeId
+        static const NodeId bin_ops[] = {
+            // +        -          /        //           %
+            NodeAdd, NodeSub, NodeDiv, NodeModulo, NodeRemainder,
+            // *        <          <<            <=          <>
+            NodeMul, NodeLess, NodeShiftLeft, NodeLessEq, NodeNotEq,
+            // =        >          >=            >>                >>>
+            NodeEq, NodeGreater, NodeGreaterEq, NodeShiftRight, NodeShiftRightLogical
+        };
+
+        BinaryOp *node = nullptr;
+
+        auto tok_id = tok->id;
+        NodeId node_id;
+        bool is_bin_op = true;
+        if (tok_id > TokenIdBinOpBegin && tok_id < TokenIdBinOpEnd)
+            node_id = bin_ops[tok_id - TokenIdBinOpBegin - 1];
+        else if (tok_id == TokenIdAnd)
+            node_id = NodeAnd;
+        else if (tok_id == TokenIdOr)
+            node_id = NodeOr;
+        else if (tok_id == TokenIdXor)
+            node_id = NodeXor;
+        //else if (tok_id == TokenIdWord) // TBD: check infix func
+        else is_bin_op = false;
+
+        if (is_bin_op) {
+            auto op_tok = tok;
+            auto lhs = parseUnaryExpr(tok->next, &tok);
+            node = newNode<BinaryOp>(node_id, lhs, parseUnaryExpr(tok->next, &tok));
+            node->tok = op_tok;
+            *rest = tok;
+            return node;
+        }
+    }
+
     switch (tok->id) {
         case TokenIdWord:
         label_word:
@@ -1700,6 +1759,7 @@ Node * Parser::parseUnaryExpr(Token *tok, Token **rest) {
         case TokenIdFunc:  // anonymous function
         case TokenIdAlias:
         default:
+            LOG() << tok->str() << " " << tok->sub_id << '\n';
             if (tok->sub_id == TokenIdKeyword) goto label_word;
             break;
     }

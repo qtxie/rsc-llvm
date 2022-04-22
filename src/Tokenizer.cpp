@@ -434,12 +434,12 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                 Token *tok = scanDirectives(p);
                 p += tok->len;
 
+                p = skipSpaces(p);
                 // We process the include file here to get better cache performance
                 // so that we can put all the tokens in memory sequentially
                 // For non-trivial cases, e.g include file in macros
                 // We let the preprocessor handle them.
                 if (tok->id == TokenIdMacroInclude) {
-                    p = skipSpaces(p);
                     int n = scanFile(p);
                     if (n > 0) {
                         p++;    // skip %
@@ -455,6 +455,20 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                     } else {
                         return tokenError(p, err_expected, "file");
                     }
+                } else if (tok->id == TokenIdMacroScript) {
+                    int n = scanFile(p);
+                    p += n;
+                } else if (tok->id == TokenIdMacroU16) {
+                    uint8_t flag = 0;
+                    int len = scanQuotedString(p, &flag);
+                    if (len == -1) tokenError(p, err_invalid_token);
+                    p++;
+                    ADD_TOK(TokenIdString, p, len);
+                    cur->flags |= flag;
+                    cur->sub_id = TokenIdMultilineString;
+                    p++;
+                } else if (tok->id == TokenIdMacroUserCode) {
+                    // skip this token
                 } else {
                     cur = cur->next = tok;
                 }
@@ -462,7 +476,7 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
             continue;
         default:
             break;
-        }  
+        }
 
         // Hexadecimal integer
         // Rule: 2 8 hexa e: #"h"

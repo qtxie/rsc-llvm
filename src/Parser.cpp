@@ -203,13 +203,14 @@ Context * Parser::findContext(Token *tok) {
 
 constexpr auto genDatatypes()
 {
-    std::array<std::pair<StringRef, Type>, 6> datatypes = {{
+    std::array<std::pair<StringRef, Type>, 7> datatypes = {{
         {"byte!", Type{TypeByte, false, 1, 1, 0, nullptr, nullptr, TypeByte}},
         {"c-string!", Type{TypeCStr, false, 8, 8, 0, nullptr, nullptr, TypePtr}},
         {"float!", Type{TypeDouble, false, 8, 8, 0, nullptr, nullptr, TypeDouble}},
         {"float32!", Type{TypeFloat, false, 4, 4, 0, nullptr, nullptr, TypeFloat}},
         {"integer!", Type{TypeInt, true, 4, 4, 0, nullptr, nullptr, TypeInt}},
         {"logic!", Type{TypeBool, false, 1, 1, 0, nullptr, nullptr, TypeBool}},
+        {"subroutine!", Type{TypeSubRoutine, false, 8, 8, 0, nullptr, nullptr, TypeSubRoutine}}
     }};
     return datatypes;
 }
@@ -1755,7 +1756,16 @@ Node * Parser::parseUnaryExpr(Token *tok, Token **rest) {
         case TokenIdSize:     node = parseSizeOf(tok, &tok); break;
         case TokenIdNot:      node = parseNot(tok, &tok); break;
         case TokenIdNull:     node = newNode<Node>(NodeNull, tok); break;
-        case TokenIdLBracket: node = parseLiteralArray(tok, &tok); break;
+        case TokenIdLBracket: 
+            if (curVar && curVar->type->id == TypeSubRoutine) {
+                addCurFuncAttr(FuncHasSubRoutine);
+                auto subroutine = newNode<SubRoutine>(TypeSubRoutine, curVar->tok);
+                subroutine->body = parseCode(tok, &tok, curCtx);
+                node = subroutine;
+            } else {
+                node = parseLiteralArray(tok, &tok);
+            }
+            break;
         case TokenIdFunc:  // anonymous function
         case TokenIdAlias:
         default:
@@ -1807,8 +1817,10 @@ Node * Parser::parseAssignment(Token *tok, Token **rest, bool is_in_func) {
         node = parseExpr(tok, rest);
     }
 
-    if (is_set)
+    if (is_set) {
+        curVar = (Variable *)node;
         node = newNode<Assignment>(NodeAssign, node, parseAssignment(tok->next, rest, is_in_func));
+    }
     return node;
 }
 

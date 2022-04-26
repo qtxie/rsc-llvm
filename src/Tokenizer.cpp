@@ -458,6 +458,7 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                 } else if (tok->id == TokenIdMacroScript) {
                     int n = scanFile(p);
                     p += n;
+                    p++;
                 } else if (tok->id == TokenIdMacroU16) {
                     uint8_t flag = 0;
                     int len = scanQuotedString(p, &flag);

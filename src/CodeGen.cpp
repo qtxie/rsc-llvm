@@ -21,6 +21,7 @@
 
 using llvm::GlobalValue;
 using llvm::BasicBlock;
+using llvm::IndirectBrInst;
 
 static const char * const NodeName[] = {
     #define NODE(ID, STR) STR,
@@ -134,6 +135,19 @@ llvm::Value * CodeGen::getElementPtr(Path *path) {
 llvm::Value * CodeGen::readVariable(Variable *var) {
     LOG() << var << " " << var->tok->str() << " " << var->ir << " " << var->attrs << '\n';
     if (var->type->id == TypePtr && var->hasAttr(VarGlobal)) return var->ir;
+    if (var->type->id == TypeSubRoutine) {
+        SubRoutine *rt = (SubRoutine *)var->ir;
+        auto block = createBasicBlock();
+        builder->CreateStore(llvm::BlockAddress::get(block), destAddr);
+        IndirectBrInst *inst = (IndirectBrInst *)rt->inst;
+        if (inst) inst->addDestination(block);
+
+        BasicBlock *bb = (BasicBlock *)rt->bb;
+        auto ind = builder->CreateIndirectBr(llvm::BlockAddress::get(bb), 1);
+        ind->addDestination(bb);
+        setCurrentBasicBlock(block);
+        return nullptr;
+    }
     return CreateLoad(var->ir);
 }
 
@@ -753,6 +767,7 @@ llvm::Value * CodeGen::emitExpr(Node *node) {
         Type *ty = (Type *)node;
         val = llvm::ConstantInt::getBool(Ctx, ty->data.value);
     } break;
+    case TypeSubRoutine:   val = emitSubRoutine((SubRoutine *)node); break;
     case NodeArray:        val = createArray((Array*)node); break;
     case NodeLiteralArray: val = createLiteralArray((LitArray*)node); break;
     case NodeMemberAccess: val = readStructMember((Path *)node); break;
@@ -786,7 +801,14 @@ llvm::Value * CodeGen::emitAssignment(Assignment *node) {
         val = emitExpr(node->rhs);
     }
     assert(val != nullptr);
+
 LOG() << node->lhs->tok->str() << '\n';
+
+    if (node->rhs->id == TypeSubRoutine) {
+        left->ir = val;
+        return val;
+    }
+
     if (dest_id == NodeVar && left->hasAttr(VarGlobal)) {
         auto ty = left->type;
         if (ty->id == TypePtr) {
@@ -935,6 +957,20 @@ void CodeGen::createFunctions(Context *ctx) {
     }
 }
 
+llvm::Value * CodeGen::emitSubRoutine(SubRoutine *routine) {
+    auto block = createBasicBlock(routine->tok->str());
+    auto cur_bb = curBB;
+    setCurrentBasicBlock(block);
+    emitCode(routine->body);
+    if (!block->getTerminator()) {
+        llvm::Value *addr = CreateLoad(destAddr);
+        routine->inst = builder->CreateIndirectBr(addr, 6);
+    }
+    routine->bb = block;
+    setCurrentBasicBlock(cur_bb);
+    return (llvm::Value *)routine;
+}
+
 void CodeGen::emitFunc(Function *fn) {
     if (fn->import_lib) return;
 
@@ -949,7 +985,7 @@ void CodeGen::emitFunc(Function *fn) {
         while (node) {
             Variable *var = (Variable *) node;
             if (var->type) {
-                var->ir = builder->CreateAlloca(llvmType(var->type));
+                if (var->type->id != TypeSubRoutine) var->ir = builder->CreateAlloca(llvmType(var->type));
             } else {
                 error(var, warn_unused_var);
             }
@@ -969,6 +1005,7 @@ void CodeGen::emitFunc(Function *fn) {
     alloca_on_stack(fn->locals);
     if (fn->hasAttr(FuncHasAnyAll)) tempVarBool = builder->CreateAlloca(bool_ty);
     if (fn->hasAttr(FuncHasLoop)) loopCounter = builder->CreateAlloca(i32_ty);
+    if (fn->hasAttr(FuncHasSubRoutine)) destAddr = builder->CreateAlloca(llvm::Type::getInt8PtrTy(Ctx));
     auto ret_ty = fn->type->return_type;
     if (ret_ty->id != TypeVoid) returnVal = builder->CreateAlloca(llvmType(ret_ty));
     else returnVal = nullptr;

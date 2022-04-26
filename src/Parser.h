@@ -38,6 +38,7 @@ enum FuncAttr {
     FuncThrow        = 0x0400,
     FuncHasAnyAll    = 0x0800,
     FuncHasLoop      = 0x1000,
+    FuncHasSubRoutine = 0x2000,
 
     FuncAttrEnd,
     LLVM_MARK_AS_BITMASK_ENUM(/* LargestValue = */ FuncAttrEnd)
@@ -158,6 +159,12 @@ struct Function : Node {
     }
 
     bool hasAttr(FuncAttr attr) {return static_cast<bool>(type->attrs & attr);}
+};
+
+struct SubRoutine : Node {
+    Node *body;
+    IrValue *inst;
+    IrValue *bb;
 };
 
 struct Variable : TypedNode {
@@ -314,6 +321,7 @@ private:
     SmallVector<WithDecl *> withStack;
 
     bool isSizeOf;
+    Variable *curVar;
     std::set<FuncType> funcTypeCache;
     SmallVector<std::tuple<Function*, FnCall*>> unresolvedCalls;
     Token hiddenParamTok;
@@ -330,6 +338,7 @@ private:
 public:
     Parser(Compilation &c, CodeGen &_codegen) : Utils(c), codegen(_codegen), curTypeId(1000) {
         isSizeOf = false;
+        curVar = nullptr;
         hiddenParamTok.id = TokenIdWord;
         hiddenParamTok.loc = "__r/s_throw_";
         hiddenParamTok.len = std::char_traits<char>::length(hiddenParamTok.loc);

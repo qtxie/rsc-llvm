@@ -37,6 +37,7 @@ private:
     llvm::Value *tempVarBool;
     llvm::Value *typedValues;
     llvm::Value *returnVal;
+    llvm::Value *destAddr;
 
     llvm::IntegerType *bool_ty;
     llvm::IntegerType *byte_ty;
@@ -75,6 +76,7 @@ public:
     llvm::Value * emitBinOpInt(NodeId op, llvm::Value *left, llvm::Value *right, bool isSigned);
     llvm::Value * emitExpr(Node *node);
     llvm::Value * emitAssignment(Assignment *node);
+    llvm::Value * emitSubRoutine(SubRoutine *node);
     llvm::GlobalVariable * emitGlobalVar(Variable *var, const Type *ty);
 
     void emitBreak(Node *node);

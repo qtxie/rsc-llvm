@@ -1757,7 +1757,7 @@ Node * Parser::parseUnaryExpr(Token *tok, Token **rest) {
         case TokenIdNot:      node = parseNot(tok, &tok); break;
         case TokenIdNull:     node = newNode<Node>(NodeNull, tok); break;
         case TokenIdLBracket: 
-            if (curVar && curVar->type->id == TypeSubRoutine) {
+            if (curVar->type && curVar->type->id == TypeSubRoutine) {
                 addCurFuncAttr(FuncHasSubRoutine);
                 auto subroutine = newNode<SubRoutine>(TypeSubRoutine, curVar->tok);
                 subroutine->body = parseCode(tok, &tok, curCtx);
@@ -2029,6 +2029,14 @@ Node * Parser::parseCode(Token *tok, Token **rest, Context *ctx, bool is_func_bo
         case TokenIdThrow: node = parseThrow(tok, &tok); break;
         case TokenIdCatch: node = parseCatch(tok, &tok); break;
         case TokenIdExit: node = parseExit(tok, &tok); break;
+        case TokenIdAssert: parseUnaryExpr(tok->next, &tok); break;
+        case TokenIdComment: 
+            if (tok->next->id == TokenIdLBracket) {
+                skipBlock(tok->next, &tok);
+            } else {
+                tok = tok->next->next;
+            }
+            continue;
         case TokenIdWith: {
             auto saved_ns = withNS.size();
             tok = tok->next;

@@ -72,6 +72,7 @@ OPERATOR(Remainder,          "%")
 
 // @@ Note: Keep it in ascend order
 KEYWORD(Star,                "*")
+KEYWORD(ShiftRightLogical2,  "-**")
 KEYWORD(Less,                "<")
 KEYWORD(ShiftLeft,           "<<")
 KEYWORD(LessEqual,           "<=")

@@ -27,6 +27,7 @@ TYPE(SubRoutine,         "subroutine!")
 TYPE(FuncTy,             "func-spec")
 TYPE(FuncUnresolved,     "unresolved-func")
 TYPE(StructUnresolved,   "unresolved-struct")
+TYPE(Builtin,            "builtin")
 TYPE(End,                "type-end")
 
 NODE(Assign,             "assignment")
@@ -80,6 +81,8 @@ NODE(Null,               "null")
 NODE(WithDecl,           "with-decls")
 NODE(Array,              "array")
 NODE(LiteralArray,       "literal-array")
+NODE(BuiltinCall,        "call-builtin")
+NODE(StackValue,         "system/stack")
 
 #undef TYPE
 #undef NODE

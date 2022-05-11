@@ -220,6 +220,12 @@ struct FnCall : Node {
     int  n_args;
 };
 
+struct BuiltinCall : Node {
+    Function *fn;
+    Node *args;
+    int n_args;
+};
+
 struct Return : Node {
     Node *expr;
 };
@@ -312,6 +318,7 @@ private:
 
     uint32_t curTypeId;
     Context *globalCtx;
+    Context *systemCtx;
     Context *curCtx;
     Function *curFunc;
     SmallVector<uint32_t> tids;  // detect struct circular reference
@@ -325,6 +332,8 @@ private:
     std::set<FuncType> funcTypeCache;
     SmallVector<std::tuple<Function*, FnCall*>> unresolvedCalls;
     Token hiddenParamTok;
+    Token pushTok;
+    Token popTok;
     Type uintPtrTy;
     Type uintTy;
     Type voidTy;
@@ -342,6 +351,12 @@ public:
         hiddenParamTok.id = TokenIdWord;
         hiddenParamTok.loc = "__r/s_throw_";
         hiddenParamTok.len = std::char_traits<char>::length(hiddenParamTok.loc);
+        pushTok.id = TokenIdWord;
+        pushTok.loc = "push";
+        pushTok.len = 4;
+        popTok.id = TokenIdWord;
+        popTok.loc = "pop";
+        popTok.len = 3;
         uintTy = Type{TypeInt, false, 4, 4, 0, nullptr, nullptr, TypeInt};
         boolTy = Type{TypeBool, false, 1, 1, 0, nullptr, nullptr, TypeBool};
         byteTy = Type{TypeByte, false, 1, 1, 0, nullptr, nullptr, TypeByte};
@@ -408,6 +423,7 @@ private:
     Node * parseUnaryExpr(Token *tok, Token **rest);
     Node * parseExpr(Token *tok, Token **rest);
     Node * parseCast(Token *tok, Token **rest);
+    Node * _parseLocal(Token *tok, Token **rest);
     Token * parseLocal(Token *tok, Function *func);
     Token * parseFuncSpec(Token *tok, FuncType *ftype, Function *func, bool is_collect = false);
     Token * parseEnum(Token *tok, Context *ctx);
@@ -433,6 +449,8 @@ private:
     void resolveDeclarations(Context *ctx);
     void resolveFuncSpec(Type *ty);
     void resolveWithDeclarations(Context *ctx, bool parse_func);
+
+    void createBuiltins(Context *ctx);
 
     Cast *newCast(Node *val, const Type *type) {
         auto node = newNode<Cast>(NodeCast, val->tok);

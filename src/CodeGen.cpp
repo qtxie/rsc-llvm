@@ -11,6 +11,7 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/IRPrintingPasses.h>
 #include <llvm/IR/LegacyPassManager.h>
+#include <llvm/IR/InlineAsm.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
 #include <llvm/Analysis/AliasAnalysis.h>
@@ -146,7 +147,7 @@ llvm::Value * CodeGen::readVariable(Variable *var) {
         auto ind = builder->CreateIndirectBr(llvm::BlockAddress::get(bb), 1);
         ind->addDestination(bb);
         setCurrentBasicBlock(block);
-        return nullptr;
+        return ind;
     }
     return CreateLoad(var->ir);
 }

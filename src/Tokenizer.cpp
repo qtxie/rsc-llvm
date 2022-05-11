@@ -69,7 +69,7 @@ static TokenId getSymbolId(const char *p, int len, TokenId *sub_id) {
     auto it = std::lower_bound(kw_table.begin(), kw_table.end(), sym,
         [](const auto &a, const auto &b) {return -1 == a.first.compare_insensitive(b);});
 
-    if (it == kw_table.end() || it->first != sym) {
+    if (it == kw_table.end() || !it->first.equals_insensitive(sym)) {
         return TokenIdWord;
     } else {
         *sub_id = TokenIdKeyword;
@@ -430,7 +430,19 @@ Token * Tokenizer::tokenize(const char *p, Token **end_token) {
                 ADD_TOK(TokenIdByte, p, n)
                 p++;    // skip '"'
             }
-            else {
+            else if (*p == '.') {
+                static constexpr StringLiteral inf(".inf");
+                static constexpr StringLiteral nan(".nan");
+                StringRef s(p, 4);
+                if (0 == inf.compare_insensitive(s) || 0 == nan.compare_insensitive(s)) {
+                    ADD_TOK(TokenIdFloat, p, 4);
+                    cur->flags |= TKFlagSpecialFloat;
+                    if (*p == '-') {
+                        cur->flags != TKFlagNegativeNum;
+                        p++;
+                    }
+                }
+            } else {
                 Token *tok = scanDirectives(p);
                 p += tok->len;
 

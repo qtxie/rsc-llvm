@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_ADT_STRINGMAP_H
-#define LLVM_ADT_STRINGMAP_H
+#ifndef REDSC_LLVM_ADT_STRINGMAP_H
+#define REDSC_LLVM_ADT_STRINGMAP_H
 
 #include "llvm/ADT/StringMapEntry.h"
 #include "llvm/ADT/iterator.h"
@@ -21,7 +21,9 @@
 #include <initializer_list>
 #include <iterator>
 
-namespace llvm {
+namespace redsc {
+
+using namespace llvm;
 
 template <typename ValueTy> class StringMapConstIterator;
 template <typename ValueTy> class StringMapIterator;
@@ -483,6 +485,6 @@ public:
   StringRef operator*() const { return this->wrapped()->getKey(); }
 };
 
-} // end namespace llvm
+} // end namespace redsc
 
 #endif // LLVM_ADT_STRINGMAP_H

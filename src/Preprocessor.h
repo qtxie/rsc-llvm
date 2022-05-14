@@ -9,10 +9,10 @@
 #define RED_SYSTEM_PREPROCESSOR_H
 
 #include "Utils.h"
-#include "StringMap.h"
+#include "_StringMap.h"
 
 using std::unique_ptr;
-using llvm::StringMap;
+using redsc::StringMap;
 
 typedef Buffer<Hideset, 5000> HidesetBuffer;
 typedef SmallVector<StringRef> MacroParam;

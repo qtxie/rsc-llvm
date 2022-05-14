@@ -175,7 +175,7 @@ static Node * _findDecl(Token *name, Context *ctx, Context **ctx_out, bool bubbl
 }
 
 Node * Parser::findDecl(Token *name, Context **ctx_out, Context *ctx) {
-    LOG() << name->str() << ' ' << ctx << ' ' << withNS.empty() << '\n';
+    //LOG() << name->str() << ' ' << ctx << ' ' << withNS.empty() << '\n';
     if (ctx) return _findDecl(name, ctx, ctx_out, false);
     if (withNS.empty()) {
         return _findDecl(name, curCtx, ctx_out, true);
@@ -256,7 +256,7 @@ const Type * Parser::parseType(Token *tok, Token **rest, bool is_block, bool is_
 
     Context *ctx_out = nullptr;
     const Type *type = findType(tok, &ctx_out, ctx);
-    LOG() << type << " " << tok->str() << " " << TokenNames[tok->id] << '\n';
+    //LOG() << type << " " << tok->str() << " " << TokenNames[tok->id] << '\n';
     if (type) {  // alias type
         tok = tok->next;
         if (!is_collect && tok->id == TokenIdWord && tok->equals("value")) { // struct value
@@ -271,7 +271,7 @@ const Type * Parser::parseType(Token *tok, Token **rest, bool is_block, bool is_
         } else if (tok->equals("function!")) {
             auto fn = newNode<FuncType>(TypeFuncTy, tok);
             tok = parseFuncSpec(tok->next, fn, nullptr, is_collect);
-            LOG() << fn << ' ' << is_collect << ' ' << fn->return_type << '\n';
+            //LOG() << fn << ' ' << is_collect << ' ' << fn->return_type << '\n';
             type = fn;
         } else if (tok->equals("pointer!")) {
             type = newPtrType(parseType(tok->next, &tok, true, is_collect));
@@ -378,9 +378,7 @@ Token *Parser::parseFuncSpec(Token *tok, FuncType *ftype, Function *func, bool i
         if (state == SParam && tok->id == TokenIdWord) {
             // param = word "[" type "]" doc-string?
             auto param = newNode<Variable>(NodeVar, tok);
-            LOG() << tok->str() << " " << param << '\n';
             param->type = parseType(tok->next, &tok);
-            LOG() << (int)param->type->id << " " << param->type << " " << TypeName[param->type->id] << '\n';
             ftype->params = ftype->params->next = param;
             ftype->n_params++;
             consume(tok, TokenIdString, &tok);
@@ -474,7 +472,6 @@ Node * Parser::collectDecl(Token *tok, Token **rest, bool is_func_ctx) {
         func->import_name = name;
         // func-spec-block
         tok = parseFuncSpec(tok->next, nullptr, func, true);
-LOG() << tok << '\n';
         // body-block
         func->body.token = tok;
         skipBlock(tok, rest);
@@ -741,7 +738,7 @@ const Type * Parser::analyzeNodeType(Node *node) {
     }
     case NodeFnCall:
         analyzeType(((FnCall *)node)->args);
-        LOG() << node << ' ' << ((FnCall *)node)->type << '\n';
+        //LOG() << node << ' ' << ((FnCall *)node)->type << '\n';
         return ((FnCall*)node)->type->return_type;
 
     case NodeVar:
@@ -858,7 +855,7 @@ const Type * Parser::analyzeNodeType(Node *node) {
     case NodeIdent: {
         auto ty = ((Identifier *)node)->var->type;
         if (ty->id == TypeSubRoutine) {
-            LOG() << "subroutine " << ty << '\n';
+            //LOG() << "subroutine " << ty << '\n';
             return analyzeType(((SubRoutine *)ty)->body);
         } else {
             return ty;
@@ -1214,7 +1211,7 @@ Node * Parser::parsePath(Token *tok, Token **rest, bool &is_setpath) {
     auto type_id = ty->id;
     Node head{};
     Node *cur = &head;
-    LOG() << tok->str() << " " << TypeName[type_id] << '\n';
+    //LOG() << tok->str() << " " << TypeName[type_id] << '\n';
 
     // special case for system/*
     if (is_root && tok->equals("system")) {
@@ -1782,7 +1779,7 @@ Node * Parser::parseUnaryExpr(Token *tok, Token **rest) {
         }
     }
 
-    LOG() << tok->str() << " id: " << (int)tok->id << '\n';
+    //LOG() << tok->str() << " id: " << (int)tok->id << '\n';
 
     switch (tok->id) {
         case TokenIdWord:

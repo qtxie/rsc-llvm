@@ -10,12 +10,10 @@
 
 #include "Logger.h"
 #include "Utils.h"
-#include "StringMap.h"
+#include "_StringMap.h"
 #include <set>
 #include <llvm/ADT/BitmaskEnum.h>
 #include <llvm/IR/DerivedTypes.h>
-
-using llvm::StringMap;
 
 namespace llvm {
     class Value;
@@ -74,7 +72,7 @@ struct Node {
     bool isa(NodeId node_id) {return id == node_id;}
 };
 
-typedef StringMap<Node *> HashMap;
+typedef redsc::StringMap<Node *> HashMap;
 typedef NodeId TypeId;
 
 struct Type : Node {

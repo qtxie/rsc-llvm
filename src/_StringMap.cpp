@@ -11,10 +11,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "StringMap.h"
+#include "_StringMap.h"
 #include "llvm/Support/DJB.h"
 #include "llvm/Support/MathExtras.h"
 
+using namespace redsc;
 using namespace llvm;
 
 /// Returns the number of buckets to allocate to ensure that the DenseMap can

@@ -472,9 +472,9 @@ llvm::Value * CodeGen::emitCall(FnCall *call) {
 llvm::Value * CodeGen::emitBinOpInt(NodeId op, llvm::Value *left, llvm::Value *right, bool isSigned) {
     switch (op)
     {
-    case NodeAdd:        return isSigned ? builder->CreateNSWAdd(left, right) : builder->CreateNUWAdd(left, right);
-    case NodeSub:        return isSigned ? builder->CreateNSWSub(left, right) : builder->CreateNUWSub(left, right);
-    case NodeMul:        return isSigned ? builder->CreateNSWMul(left, right) : builder->CreateNUWMul(left, right);
+    case NodeAdd:        return builder->CreateAdd(left, right);
+    case NodeSub:        return builder->CreateSub(left, right);
+    case NodeMul:        return builder->CreateMul(left, right);
     case NodeDiv:        return isSigned ? builder->CreateSDiv(left, right) : builder->CreateUDiv(left, right);
     case NodeModulo:
     case NodeRemainder:  return isSigned ? builder->CreateSRem(left, right) : builder->CreateURem(left, right);

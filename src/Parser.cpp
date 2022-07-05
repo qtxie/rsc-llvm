@@ -648,7 +648,7 @@ const Type * Parser::addVarType(Node *node) {
                 }
                 if (var->type->id == TypeSubRoutine) var->type = ty;
             }
-            if (var->hasAttr(VarGlobal) && ty->id == TypeCStr) var->size = ty->tok->len + 1;
+            if (var->hasAttr(VarGlobal) && ty->id == TypeCStr && ty->data.str) var->size = ty->tok->len + 1;
             if (var->hasAttr(VarGlobal) && assign->rhs->id == NodeLiteralArray) {
                 LitArray *arr = (LitArray *)assign->rhs;
                 var->size = arr->num;
